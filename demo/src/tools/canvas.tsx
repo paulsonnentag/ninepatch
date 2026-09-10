@@ -6,18 +6,18 @@
 
 import { For, from, Show } from "solid-js";
 import { render } from "solid-js/web";
-import type { Handle, Namespace } from "@ninepatch/core";
+import type { Handle, Directory } from "@ninepatch/core";
 import type { CanvasDoc } from "../types";
 
-export async function Canvas(ns: Namespace) {
-  const dom = await ns.open<Element>("dom");
-  const doc = await ns.open<CanvasDoc>("doc");
-  const selection = await ns.open<string | null>("selection");
+export async function Canvas(dir: Directory) {
+  const dom = await dir.open<Element>("dom");
+  const doc = await dir.open<CanvasDoc>("doc");
+  const selection = await dir.open<string | null>("selection");
   const dispose = render(
     () => <Cards doc={doc} selection={selection} />,
     dom.value
   );
-  ns.signal.addEventListener("abort", dispose);
+  dir.signal.addEventListener("abort", dispose);
 }
 
 function Cards(props: {

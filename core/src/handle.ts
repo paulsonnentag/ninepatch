@@ -25,7 +25,7 @@ export function isHandle(x: unknown): x is Handle<unknown> {
 }
 
 /** What `mount` does to a plain value: a mutable handle of the
- * namespace's own. */
+ * directory's own. */
 export function wrap<T>(initial: T): Handle<T> {
   const changes = new Emitter();
   let current = initial;
@@ -147,7 +147,7 @@ export function derive<A, B>(
 }
 
 /** A read-only handle over a getter and the emitter that says when it
- * moved — what a namespace's `entries` and `children` are. */
+ * moved — what a directory's `entries` and `children` are. */
 export function readonly<T>(read: () => T, changes: Emitter): Handle<T> {
   return {
     [brand]: true,

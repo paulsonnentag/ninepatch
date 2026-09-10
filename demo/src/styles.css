@@ -67,7 +67,7 @@ pre {
   font-size: 0.8rem;
 }
 
-/* the band: preview | code | namespace, edge to edge. Columns come from
+/* the band: preview | code | directory, edge to edge. Columns come from
    the dividers (draggable), height from the grip in the corner. */
 .panels {
   display: grid;
@@ -223,7 +223,7 @@ body.dragging {
   color: #999;
 }
 
-/* the namespaces as windows: one per namespace, hung in their hierarchy
+/* the directories as windows: one per directory, hung in their hierarchy
    on the left, and the selection previewed in a window on the right */
 .panel.context .panel-body {
   padding: 0;
@@ -327,7 +327,7 @@ body.dragging {
   white-space: nowrap;
 }
 
-/* a namespace's window, and the windows below it hanging off a line drawn
+/* a directory's window, and the windows below it hanging off a line drawn
    down from it */
 .folder-node {
   --tick: 1rem;
@@ -412,7 +412,7 @@ body.dragging {
   --icon-fill: rgba(255, 255, 255, 0.25);
 }
 
-/* inherited entries sit on a grey band above the namespace's own */
+/* inherited entries sit on a grey band above the directory's own */
 .tree-item.inherited {
   background: #f7f7f8;
 }

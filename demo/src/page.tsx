@@ -1,13 +1,13 @@
 /** The page: four sections, each a sentence, a live example, the code
- * behind it, and the namespaces it runs in. Every section gets its own
- * named fork of the page's namespace, so the namespace panel shows exactly
- * that section's world. The host work, fork, mount, hand the namespace to
- * a tool, happens right here, and the namespace is always passed by hand:
+ * behind it, and the directories it runs in. Every section gets its own
+ * named fork of the page's directory, so the data panel shows exactly
+ * that section's world. The host work, fork, mount, hand the directory to
+ * a tool, happens right here, and the directory is always passed by hand:
  * nothing is provided through context. */
 
 import { For, from } from "solid-js";
 import { derive, type Handle } from "@ninepatch/core";
-import { frame, ns, seed } from "./boot";
+import { frame, dir, seed } from "./boot";
 import { setupRoute, toHash } from "./route";
 import { Mount, Section } from "./harness";
 import { Chat } from "./tools/chat";
@@ -58,7 +58,7 @@ export function Page() {
       <header>
         <h1>ninepatch</h1>
         <p>
-          Plan 9's namespace, in the browser, over automerge: a <b>namespace</b>{" "}
+          Plan 9's namespace, in the browser, over automerge: a <b>directory</b>{" "}
           is a position you navigate, mount into, and listen on, and a{" "}
           <b>handle</b> is a live grip on a value. Open this page in a second
           tab and everything syncs.
@@ -67,11 +67,11 @@ export function Page() {
 
       <Section
         title="Boot"
-        chain={[ns, frame, boot]}
+        chain={[dir, frame, boot]}
         sources={[{ name: "boot.ts", code: bootSource }]}
         prose={
           <p>
-            One repo, one origin namespace, the repo mounted as a server that
+            One repo, one origin directory, the repo mounted as a server that
             answers <code>automerge:</code> opens, and <code>demo</code> mounted
             as a link to the seed folder, listed here live.
           </p>
@@ -94,13 +94,13 @@ export function Page() {
       >
         <div class="row">
           <Mount
-            ns={chat}
+            dir={chat}
             name="Alice"
             tool={Chat}
             mount={{ doc: seed.chat, user: seed.alice }}
           />
           <Mount
-            ns={chat}
+            dir={chat}
             name="Bob"
             tool={Chat}
             mount={{ doc: seed.chat, user: seed.bob }}
@@ -129,12 +129,12 @@ export function Page() {
         }
       >
         <Mount
-          ns={places}
+          dir={places}
           name="Canvas"
           tool={Canvas}
           mount={{ doc: seed.canvas }}
         />
-        <Mount ns={places} name="Map" tool={MapView} />
+        <Mount dir={places} name="Map" tool={MapView} />
       </Section>
 
       <Section
@@ -147,7 +147,7 @@ export function Page() {
         ]}
         prose={
           <p>
-            The route lives in the namespace as <code>location</code>, kept in
+            The route lives in the directory as <code>location</code>, kept in
             step with the browser's hash, and <code>selectedDoc</code> is a link
             derived from it that the editor follows wherever the buttons, the
             bar, or the address bar point it.
@@ -162,8 +162,8 @@ export function Page() {
             notes2
           </button>
         </div>
-        <Mount ns={url} name="UrlBar" tool={UrlBar} />
-        <Mount ns={url} name="Markdown" tool={Markdown} />
+        <Mount dir={url} name="UrlBar" tool={UrlBar} />
+        <Mount dir={url} name="Markdown" tool={Markdown} />
       </Section>
     </>
   );

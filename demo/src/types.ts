@@ -1,9 +1,9 @@
-import type { Namespace } from "@ninepatch/core";
+import type { Directory } from "@ninepatch/core";
 
-/** A tool is a function of one namespace. Everything it needs — the DOM
+/** A tool is a function of one directory. Everything it needs — the DOM
  * included — is an entry; there is nothing to return, and cleanup hangs
- * off `ns.signal`. */
-export type Tool = (ns: Namespace) => Promise<void>;
+ * off `dir.signal`. */
+export type Tool = (dir: Directory) => Promise<void>;
 
 export type ContactDoc = { name: string; color: string };
 export type ChatDoc = {

@@ -1,7 +1,7 @@
 /** The page furniture: the host side of a tool (`Mount`), and a section —
  * prose plus three panels: the live example, the code behind it in tabs,
- * and the namespaces it runs in, drawn as a file window: the hierarchy
- * of namespaces as folders with their entries as files, and a preview of
+ * and the directories it runs in, drawn as a file window: the hierarchy
+ * of directories as windows with their entries as files, and a preview of
  * whatever is selected. Handles feed Solid through
  * `from()`: a handle is a store. */
 
@@ -18,7 +18,7 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js";
-import { hasScheme, type Handle, type Namespace } from "@ninepatch/core";
+import { hasScheme, type Handle, type Directory } from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { render } from "solid-js/web";
@@ -27,27 +27,27 @@ import type { Tool } from "./types";
 
 export type Source = { name: string; code: string };
 
-/** The host side of a tool, spelled out: fork the section's namespace
+/** The host side of a tool, spelled out: fork the section's directory
  * under `name`, mount what the tool should see plus this element as
  * `dom`, run it, close on cleanup. A tool that rejects — an entry it
  * needed isn't there — says so in its slot. */
 export function Mount(props: {
-  ns: Namespace;
+  dir: Directory;
   name: string;
   tool: Tool;
   mount?: Record<string, unknown>;
   unmount?: string[];
 }) {
-  const ns = props.ns.fork(props.name);
+  const dir = props.dir.fork(props.name);
   const el = (<div class="tool" />) as HTMLDivElement;
   for (const [path, what] of Object.entries(props.mount ?? {}))
-    ns.mount(path, what);
-  for (const path of props.unmount ?? []) ns.unmount(path);
-  ns.mount("dom", el);
-  props.tool(ns).catch((e: unknown) => {
-    if (!ns.signal.aborted) el.textContent = String(e);
+    dir.mount(path, what);
+  for (const path of props.unmount ?? []) dir.unmount(path);
+  dir.mount("dom", el);
+  props.tool(dir).catch((e: unknown) => {
+    if (!dir.signal.aborted) el.textContent = String(e);
   });
-  onCleanup(() => ns.close());
+  onCleanup(() => dir.close());
   return el;
 }
 
@@ -58,9 +58,9 @@ export function Section(props: {
   title: string;
   prose: JSX.Element;
   sources: Source[];
-  /** The section's namespace, last, with everything it was forked from
+  /** The section's directory, last, with everything it was forked from
    * before it — that's where its inherited entries come from. */
-  chain: Namespace[];
+  chain: Directory[];
   children: JSX.Element;
 }) {
   const [widths, setWidths] = createSignal([1, 1, 1]);
@@ -181,22 +181,26 @@ type EntryRow = {
   key: string;
   path: string[];
   handle: Handle<unknown>;
-  /** Whose overlay it sits in: this namespace, or one it inherits from. */
-  owner: Namespace;
+  /** Whose overlay it sits in: this directory, or one it inherits from. */
+  owner: Directory;
   inherited: boolean;
 };
 
-/** An entry picked in some window: the row, the namespace whose window it
+/** An entry picked in some window: the row, the directory whose window it
  * was picked in, and that window's probe for resolving links. */
-type Selection = { row: EntryRow; ns: Namespace; probe: Namespace | undefined };
+type Selection = {
+  row: EntryRow;
+  dir: Directory;
+  probe: Directory | undefined;
+};
 
 /** How a window is found from elsewhere — the preview's "from" link
  * unfolds the window the entry came from and scrolls to it. */
-type Registry = Map<Namespace, () => void>;
+type Registry = Map<Directory, () => void>;
 
-/** The namespaces of a section: one window per namespace, hung in their
+/** The directories of a section: one window per directory, hung in their
  * hierarchy. Selecting an entry opens a preview inside its window. */
-function Windows(props: { chain: Namespace[] }) {
+function Windows(props: { chain: Directory[] }) {
   const [selected, setSelected] = createSignal<Selection>();
   const registry: Registry = new Map();
   mountHighlight();
@@ -213,10 +217,10 @@ function Windows(props: { chain: Namespace[] }) {
   );
 }
 
-/** One namespace in the tree: a window named after it, listing what
- * `open` would find from here — what it inherits from the namespaces it
- * was forked from, faint, then its own — and below it the namespaces below
- * it, each its own window hanging off a line from this one. A namespace
+/** One directory in the tree: a window named after it, listing what
+ * `open` would find from here — what it inherits from the directories it
+ * was forked from, faint, then its own — and below it the directories below
+ * it, each its own window hanging off a line from this one. A directory
  * that mounted nothing of its own is transparent to reads, so it is
  * transparent here too: not drawn, its children in its place (the top one
  * is kept as long as it has anything to list). The viewer's
@@ -224,7 +228,7 @@ function Windows(props: { chain: Namespace[] }) {
  * it starts listening, so they never show up as windows. What is selected
  * in this window is previewed beside its list. */
 function Node(props: {
-  chain: Namespace[];
+  chain: Directory[];
   depth: number;
   selected: Selection | undefined;
   onSelect: (sel: Selection | undefined) => void;
@@ -237,7 +241,7 @@ function Node(props: {
   const own = () => rows().filter((row) => !row.inherited);
   const kids = from(self.children, self.children.value);
   const children = () => kids().filter((c) => c !== probe);
-  /** Nothing to show: below the top, a namespace that mounted nothing;
+  /** Nothing to show: below the top, a directory that mounted nothing;
    * at the top, one with nothing to list at all. */
   const transparent = () =>
     props.depth > 0 ? own().length === 0 : rows().length === 0;
@@ -245,15 +249,16 @@ function Node(props: {
   let el!: HTMLDivElement;
 
   const isSelected = (row: EntryRow) =>
-    props.selected?.ns === self && props.selected.row.key === row.key;
+    props.selected?.dir === self && props.selected.row.key === row.key;
   /** This row is where a selection somewhere below was inherited from. */
   const isOrigin = (row: EntryRow) =>
     props.selected !== undefined &&
-    props.selected.ns !== self &&
+    props.selected.dir !== self &&
     props.selected.row.owner === self &&
     props.selected.row.key === row.key;
   /** The selection, if it is in this window. */
-  const mine = () => (props.selected?.ns === self ? props.selected : undefined);
+  const mine = () =>
+    props.selected?.dir === self ? props.selected : undefined;
 
   props.registry.set(self, () => {
     setFolded(false);
@@ -261,18 +266,18 @@ function Node(props: {
   });
   onCleanup(() => props.registry.delete(self));
 
-  // a selection that no longer exists — the entry went, or this namespace
+  // a selection that no longer exists — the entry went, or this directory
   // closed — is dropped
   createEffect(() => {
     const sel = props.selected;
-    if (sel?.ns === self) {
+    if (sel?.dir === self) {
       const row = rows().find((r) => r.key === sel.row.key);
       if (!row) props.onSelect(undefined);
       else if (row !== sel.row) props.onSelect({ ...sel, row });
     }
   });
   onCleanup(() => {
-    if (props.selected?.ns === self) props.onSelect(undefined);
+    if (props.selected?.dir === self) props.onSelect(undefined);
   });
 
   const below = () => (
@@ -325,7 +330,7 @@ function Node(props: {
                           ? `from ${row.owner.name}`
                           : `mounted here`
                       }
-                      onClick={() => props.onSelect({ row, ns: self, probe })}
+                      onClick={() => props.onSelect({ row, dir: self, probe })}
                     >
                       <FileIcon />
                       <span class="tree-name">{row.path.join("/")}</span>
@@ -344,7 +349,7 @@ function Node(props: {
                 {(sel) => (
                   <Preview
                     selection={sel}
-                    reveal={(ns) => props.registry.get(ns)?.()}
+                    reveal={(dir) => props.registry.get(dir)?.()}
                     close={() => props.onSelect(undefined)}
                   />
                 )}
@@ -364,7 +369,7 @@ function Node(props: {
  * in the raw editor. */
 function Preview(props: {
   selection: Selection;
-  reveal: (ns: Namespace) => void;
+  reveal: (dir: Directory) => void;
   close: () => void;
 }) {
   const { row, probe } = props.selection;
@@ -427,7 +432,7 @@ function FileIcon() {
 function Value(props: {
   handle: Handle<unknown>;
   path: string[];
-  probe: Namespace | undefined;
+  probe: Directory | undefined;
   editor?: boolean;
 }) {
   const value = from(props.handle, readValue(props.handle));
@@ -476,10 +481,10 @@ function Value(props: {
 function Linked(props: {
   url: string;
   path: string[];
-  probe: Namespace;
+  probe: Directory;
   editor?: boolean;
 }) {
-  let held: Namespace | undefined;
+  let held: Directory | undefined;
   const [opened] = createResource(
     async () => (held = await props.probe.open<unknown>(props.path))
   );
@@ -711,23 +716,23 @@ function Highlight() {
 
 // --- helpers ------------------------------------------------------------------
 
-/** The rows of a column: what a walk from the last namespace in the chain
- * would find, inherited entries first and the namespace's own after them.
+/** The rows of a column: what a walk from the last directory in the chain
+ * would find, inherited entries first and the directory's own after them.
  * Resolved nearest overlay first: a path already seen is shadowed, a cut
  * hides everything at or below it from further out. URL-keyed fills are
  * the plumbing, not the picture. Row identity is kept per path so a
  * fill landing elsewhere doesn't rebuild every row. */
-function createRows(chain: Namespace[]): Accessor<EntryRow[]> {
+function createRows(chain: Directory[]): Accessor<EntryRow[]> {
   const layers = [...chain]
     .reverse()
-    .map((ns) => ({ ns, entries: from(ns.entries, ns.entries.value) }));
+    .map((dir) => ({ dir, entries: from(dir.entries, dir.entries.value) }));
   let cache = new Map<string, EntryRow>();
   return createMemo(() => {
     const next = new Map<string, EntryRow>();
     const rows: EntryRow[] = [];
     const seen = new Set<string>();
     const cuts: string[][] = [];
-    layers.forEach(({ ns, entries }, depth) => {
+    layers.forEach(({ dir, entries }, depth) => {
       for (const entry of entries()) {
         if (hasScheme(entry.path[0])) continue;
         const key = entry.path.join("/");
@@ -740,13 +745,13 @@ function createRows(chain: Namespace[]): Accessor<EntryRow[]> {
         }
         const prev = cache.get(key);
         const row: EntryRow =
-          prev && prev.handle === entry.handle && prev.owner === ns
+          prev && prev.handle === entry.handle && prev.owner === dir
             ? prev
             : {
                 key,
                 path: entry.path,
                 handle: entry.handle,
-                owner: ns,
+                owner: dir,
                 inherited: depth > 0,
               };
         next.set(key, row);
@@ -767,9 +772,9 @@ function under(path: string[], prefix: string[]): boolean {
   );
 }
 
-function tryFork(ns: Namespace): Namespace | undefined {
+function tryFork(dir: Directory): Directory | undefined {
   try {
-    return ns.fork("inspector");
+    return dir.fork("inspector");
   } catch {
     return undefined; // already closed; the column is on its way out
   }

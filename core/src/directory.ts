@@ -1,6 +1,6 @@
-/** The namespace: a position plus a private overlay. `open` walks down
- * (or asks for a URL) and returns a new namespace positioned there;
- * misses bubble to the servers registered up the chain of namespaces this
+/** The directory: a position plus a private overlay. `open` walks down
+ * (or asks for a URL) and returns a new directory positioned there;
+ * misses bubble to the servers registered up the chain of directories this
  * one was opened or forked from; unanswered requests reject with NotFound.
  * See spec.md — it is canonical. */
 
@@ -20,61 +20,61 @@ import { walk, type WalkResult } from "./walk";
 
 export type { Entry };
 
-export type Namespace = {
+export type Directory = {
   /** The name given to fork(); for open(), the path opened; "root" for
-   * createNamespace(). A label, nothing more. */
+   * createDirectory(). A label, nothing more. */
   readonly name: string;
-  /** This namespace's own overlay — what it mounted, was served, or cut.
+  /** This directory's own overlay — what it mounted, was served, or cut.
    * Says nothing about what it inherits. Read-only. */
   readonly entries: Handle<Entry[]>;
-  /** Everything opened or forked from this namespace that is still open.
+  /** Everything opened or forked from this directory that is still open.
    * Read-only. */
-  readonly children: Handle<Namespace[]>;
-  /** Aborts when this namespace is closed — by its holder, or because
+  readonly children: Handle<Directory[]>;
+  /** Aborts when this directory is closed — by its holder, or because
    * something it was opened or forked from was. */
   readonly signal: AbortSignal;
 
   /** Walk down (relative path) or ask for a document (URL). Returns a new
-   * namespace positioned there. Name a type and you get a namespace that
-   * is also a handle; don't, and you get a bare namespace. Rejects with
+   * directory positioned there. Name a type and you get a directory that
+   * is also a handle; don't, and you get a bare directory. Rejects with
    * NotFound once the servers have answered and nothing is there. The
    * empty path throws — use fork(). */
   open<T = never>(path: Path): Promise<Opened<T>>;
 
-  /** A new namespace at this same position with its own overlay: reads
+  /** A new directory at this same position with its own overlay: reads
    * fall through to this one, writes stay in the fork. */
   fork<Self>(this: Self, name?: string): Self;
 
-  /** Into this namespace's overlay. Replaces what this namespace had
+  /** Into this directory's overlay. Replaces what this directory had
    * there. A Handle is used as-is; anything else is wrapped in a new one. */
   mount(path: Path, what: unknown): void;
   /** Remove, and cut fall-through at that node — permanently, for this
-   * namespace and everything opened or forked from it. Mounting over the
+   * directory and everything opened or forked from it. Mounting over the
    * cut is allowed. */
   unmount(path: Path): void;
 
-  /** Answer misses at or below here — from this namespace or anything
+  /** Answer misses at or below here — from this directory or anything
    * opened or forked from it. Returns unregister. */
   serve(server: Server): () => void;
 
-  /** Release this namespace and everything opened or forked from it. */
+  /** Release this directory and everything opened or forked from it. */
   close(): void;
 };
 
-/** What answers requests. `target`: the names from the serving namespace
+/** What answers requests. `target`: the names from the serving directory
  * to the node the walk is trying to reach; if it went through a link, the
  * first is the URL. `from`: the requester's overlay, seen from the serving
- * namespace; anything opened through it belongs to the requester and
+ * directory; anything opened through it belongs to the requester and
  * closes with it. */
 export type Server = {
   /** An open found nothing there. Must return a promise; decline by
    * returning without mounting. */
-  open?(target: string[], from: Namespace): Promise<void>;
-  /** The last namespace at or below `target` closed. */
-  close?(target: string[], from: Namespace): void;
+  open?(target: string[], from: Directory): Promise<void>;
+  /** The last directory at or below `target` closed. */
+  close?(target: string[], from: Directory): void;
 };
 
-export type Opened<T> = [T] extends [never] ? Namespace : Namespace & Handle<T>;
+export type Opened<T> = [T] extends [never] ? Directory : Directory & Handle<T>;
 
 export class NotFound extends Error {
   constructor(readonly target: string[]) {
@@ -83,18 +83,18 @@ export class NotFound extends Error {
   }
 }
 
-export function createNamespace(): Namespace {
-  return new NamespaceImpl(undefined, [], "root") as unknown as Namespace;
+export function createDirectory(): Directory {
+  return new DirectoryImpl(undefined, [], "root") as unknown as Directory;
 }
 
-type Held = { requester: NamespaceImpl; key: string };
+type Held = { requester: DirectoryImpl; key: string };
 type Fired = { key: string; target: string[] };
 
-export class NamespaceImpl {
+export class DirectoryImpl {
   readonly [brand] = true;
   readonly name: string;
   readonly overlay = new Overlay();
-  readonly parent: NamespaceImpl | undefined;
+  readonly parent: DirectoryImpl | undefined;
   /** Position relative to parent, as requested — links are re-followed on
    * every read, so a shadowed URL retargets everything downstream. */
   readonly base: string[];
@@ -103,22 +103,22 @@ export class NamespaceImpl {
   readonly pos: string[];
 
   readonly entries: Handle<Entry[]>;
-  readonly children: Handle<NamespaceImpl[]>;
+  readonly children: Handle<DirectoryImpl[]>;
   readonly servers = new Set<Server>();
-  /** Requests this namespace fired as requester, refcounted by the
-   * namespaces holding their answers. */
+  /** Requests this directory fired as requester, refcounted by the
+   * directories holding their answers. */
   readonly served = new Map<string, { target: string[]; count: number }>();
   readonly pending = new Map<string, Promise<void>>();
   /** The value here moved — the Watch says when. */
   readonly changes = new Emitter();
 
-  private readonly kids = new Set<NamespaceImpl>();
+  private readonly kids = new Set<DirectoryImpl>();
   private readonly kidsChanged = new Emitter();
   private readonly controller = new AbortController();
   private held: Held[] = [];
   private watch: Watch | undefined;
 
-  constructor(parent: NamespaceImpl | undefined, base: string[], name: string) {
+  constructor(parent: DirectoryImpl | undefined, base: string[], name: string) {
     this.parent = parent;
     this.base = base;
     this.name = name;
@@ -127,22 +127,22 @@ export class NamespaceImpl {
     this.children = readonly(() => [...this.kids], this.kidsChanged);
   }
 
-  // --- namespace surface ---------------------------------------------------
+  // --- directory surface ---------------------------------------------------
 
   get signal(): AbortSignal {
     return this.controller.signal;
   }
 
-  async open(path: Path): Promise<NamespaceImpl> {
+  async open(path: Path): Promise<DirectoryImpl> {
     this.assertOpen();
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path — use fork()");
     return this.openRel(rel);
   }
 
-  fork(name = "fork"): NamespaceImpl {
+  fork(name = "fork"): DirectoryImpl {
     this.assertOpen();
-    return this.adopt(new NamespaceImpl(this, [], name));
+    return this.adopt(new DirectoryImpl(this, [], name));
   }
 
   mount(path: Path, what: unknown): void {
@@ -224,15 +224,15 @@ export class NamespaceImpl {
 
   // --- internals -----------------------------------------------------------
 
-  async openRel(rel: string[]): Promise<NamespaceImpl> {
+  async openRel(rel: string[]): Promise<DirectoryImpl> {
     const abs = isUrlRooted(rel) ? rel : [...this.pos, ...rel];
     const { fired } = await resolveWithFills(this, abs);
-    const child = this.adopt(new NamespaceImpl(this, rel, rel.join("/")));
+    const child = this.adopt(new DirectoryImpl(this, rel, rel.join("/")));
     child.hold(this, fired);
     return child;
   }
 
-  hold(requester: NamespaceImpl, fired: Fired[]): void {
+  hold(requester: DirectoryImpl, fired: Fired[]): void {
     for (const { key, target } of fired) {
       let entry = requester.served.get(key);
       if (!entry) {
@@ -255,7 +255,7 @@ export class NamespaceImpl {
     return this.controller.signal.aborted;
   }
 
-  private adopt(child: NamespaceImpl): NamespaceImpl {
+  private adopt(child: DirectoryImpl): DirectoryImpl {
     this.kids.add(child);
     this.kidsChanged.emit();
     return child;
@@ -273,7 +273,7 @@ export class NamespaceImpl {
   }
 
   private assertOpen(): void {
-    if (this.closed) throw new Error("namespace is closed");
+    if (this.closed) throw new Error("directory is closed");
   }
 }
 
@@ -282,7 +282,7 @@ export class NamespaceImpl {
  * re-walk that misses somewhere new means a link was mounted and followed
  * — go again. The same miss twice is NotFound. */
 async function resolveWithFills(
-  requester: NamespaceImpl,
+  requester: DirectoryImpl,
   abs: string[]
 ): Promise<{ result: Extract<WalkResult, { kind: "found" }>; fired: Fired[] }> {
   const fired: Fired[] = [];
@@ -312,16 +312,16 @@ async function resolveWithFills(
 }
 
 async function fireOpen(
-  requester: NamespaceImpl,
+  requester: DirectoryImpl,
   absTarget: string[]
 ): Promise<void> {
   const calls: Promise<void>[] = [];
-  for (let ns: NamespaceImpl | undefined = requester; ns; ns = ns.parent) {
-    if (ns.servers.size === 0) continue;
-    const target = targetFor(ns, absTarget);
+  for (let dir: DirectoryImpl | undefined = requester; dir; dir = dir.parent) {
+    if (dir.servers.size === 0) continue;
+    const target = targetFor(dir, absTarget);
     if (!target) continue;
-    const from = new FromView(requester, ns) as unknown as Namespace;
-    for (const server of [...ns.servers]) {
+    const from = new FromView(requester, dir) as unknown as Directory;
+    for (const server of [...dir.servers]) {
       if (!server.open) continue;
       const out = server.open(target, from);
       if (!out || typeof out.then !== "function")
@@ -332,20 +332,20 @@ async function fireOpen(
   await Promise.all(calls);
 }
 
-function fireClose(requester: NamespaceImpl, absTarget: string[]): void {
-  for (let ns: NamespaceImpl | undefined = requester; ns; ns = ns.parent) {
-    if (ns.servers.size === 0) continue;
-    const target = targetFor(ns, absTarget);
+function fireClose(requester: DirectoryImpl, absTarget: string[]): void {
+  for (let dir: DirectoryImpl | undefined = requester; dir; dir = dir.parent) {
+    if (dir.servers.size === 0) continue;
+    const target = targetFor(dir, absTarget);
     if (!target) continue;
-    const from = new FromView(requester, ns) as unknown as Namespace;
-    for (const server of [...ns.servers]) server.close?.(target, from);
+    const from = new FromView(requester, dir) as unknown as Directory;
+    for (const server of [...dir.servers]) server.close?.(target, from);
   }
 }
 
-function targetFor(ns: NamespaceImpl, abs: string[]): string[] | undefined {
+function targetFor(dir: DirectoryImpl, abs: string[]): string[] | undefined {
   if (isUrlRooted(abs)) return abs;
-  if (isUrlRooted(ns.pos)) return undefined;
-  return startsWith(abs, ns.pos) ? abs.slice(ns.pos.length) : undefined;
+  if (isUrlRooted(dir.pos)) return undefined;
+  return startsWith(abs, dir.pos) ? abs.slice(dir.pos.length) : undefined;
 }
 
 /** The requester's overlay, seen from a server's position: paths are
@@ -359,8 +359,8 @@ class FromView {
   readonly entries: Handle<Entry[]>;
 
   constructor(
-    private readonly requester: NamespaceImpl,
-    private readonly server: NamespaceImpl
+    private readonly requester: DirectoryImpl,
+    private readonly server: DirectoryImpl
   ) {
     const prefix =
       isUrlRooted(server.pos) || isUrlRooted(requester.pos)
@@ -378,7 +378,7 @@ class FromView {
     return this.requester.name;
   }
 
-  get children(): Handle<NamespaceImpl[]> {
+  get children(): Handle<DirectoryImpl[]> {
     return this.requester.children;
   }
 
@@ -386,13 +386,13 @@ class FromView {
     return this.requester.signal;
   }
 
-  open(path: Path): Promise<NamespaceImpl> {
+  open(path: Path): Promise<DirectoryImpl> {
     const rel = this.rel(path);
     if (rel.length === 0) throw new Error("empty path — use fork()");
     return this.requester.openRel(rel);
   }
 
-  fork(name?: string): NamespaceImpl {
+  fork(name?: string): DirectoryImpl {
     return this.requester.fork(name);
   }
 
@@ -452,8 +452,8 @@ class Watch {
   private handleFired = false;
   private stopped = false;
 
-  constructor(private readonly ns: NamespaceImpl) {
-    for (let n: NamespaceImpl | undefined = ns; n; n = n.parent) {
+  constructor(private readonly dir: DirectoryImpl) {
+    for (let n: DirectoryImpl | undefined = dir; n; n = n.parent) {
       this.unsubOverlays.push(n.overlay.mutated.on(() => this.trigger(false)));
     }
     const result = this.safeWalk();
@@ -482,11 +482,11 @@ class Watch {
     let terminal: Handle<unknown> | undefined;
     try {
       const { result, fired: requests } = await resolveWithFills(
-        this.ns,
-        this.ns.pos
+        this.dir,
+        this.dir.pos
       );
       if (generation !== this.generation || this.stopped) return;
-      this.ns.hold(this.ns, requests);
+      this.dir.hold(this.dir, requests);
       terminal = result.handle;
     } catch {
       terminal = undefined;
@@ -495,12 +495,12 @@ class Watch {
     this.resubscribe(this.safeWalk());
     const changed = fired || terminal !== this.lastTerminal;
     this.lastTerminal = terminal;
-    if (changed) this.ns.changes.emit();
+    if (changed) this.dir.changes.emit();
   }
 
   private safeWalk(): WalkResult | undefined {
     try {
-      return walk(this.ns, this.ns.pos);
+      return walk(this.dir, this.dir.pos);
     } catch {
       return undefined;
     }

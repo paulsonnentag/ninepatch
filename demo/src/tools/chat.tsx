@@ -5,13 +5,13 @@
 
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
-import type { Namespace } from "@ninepatch/core";
+import type { Directory } from "@ninepatch/core";
 import type { ChatDoc, ContactDoc } from "../types";
 
-export async function Chat(ns: Namespace) {
-  const dom = await ns.open<Element>("dom");
-  const doc = await ns.open<ChatDoc>("doc");
-  const user = await ns.open<ContactDoc>("user");
+export async function Chat(dir: Directory) {
+  const dom = await dir.open<Element>("dom");
+  const doc = await dir.open<ChatDoc>("doc");
+  const user = await dir.open<ContactDoc>("user");
 
   const dispose = render(() => {
     const chat = from(doc, doc.value);
@@ -55,5 +55,5 @@ export async function Chat(ns: Namespace) {
       </div>
     );
   }, dom.value);
-  ns.signal.addEventListener("abort", dispose);
+  dir.signal.addEventListener("abort", dispose);
 }

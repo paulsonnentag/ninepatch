@@ -1,11 +1,11 @@
 export {
-  createNamespace,
+  createDirectory,
   NotFound,
   type Entry,
-  type Namespace,
+  type Directory,
   type Opened,
   type Server,
-} from "./namespace";
+} from "./directory";
 export {
   derive,
   field,

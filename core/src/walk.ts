@@ -1,5 +1,5 @@
 /** Resolution: `locate` is the structural lookup across the chain of
- * overlays a namespace falls through to; `walk` runs it and follows
+ * overlays a directory falls through to; `walk` runs it and follows
  * links — a handle whose value is a URL string — restarting from the
  * requester each hop, with a hop limit. */
 
@@ -7,7 +7,7 @@ import type { Handle } from "./handle";
 import type { Overlay } from "./overlay";
 import { hasScheme, isUrlRooted, parsePath, startsWith } from "./path";
 
-/** What walk needs of a namespace: its overlay, its chain, its absolute
+/** What walk needs of a directory: its overlay, its chain, its absolute
  * position (origin-rooted names, or URL-rooted once any hop went through
  * a URL). */
 export type ChainNode = {
@@ -68,10 +68,10 @@ export function locate(
   abs: string[]
 ): { handle: Handle<unknown> | undefined; hasEntries: boolean } {
   let hasEntries = false;
-  for (let ns: ChainNode | undefined = start; ns; ns = ns.parent) {
-    const local = toLocal(abs, ns);
+  for (let dir: ChainNode | undefined = start; dir; dir = dir.parent) {
+    const local = toLocal(abs, dir);
     if (local) {
-      const found = ns.overlay.lookup(local);
+      const found = dir.overlay.lookup(local);
       if (found.handle)
         return {
           handle: found.handle,
@@ -84,10 +84,10 @@ export function locate(
   return { handle: undefined, hasEntries };
 }
 
-function toLocal(abs: string[], ns: ChainNode): string[] | undefined {
+function toLocal(abs: string[], dir: ChainNode): string[] | undefined {
   if (isUrlRooted(abs)) return abs;
-  if (isUrlRooted(ns.pos)) return undefined;
-  return startsWith(abs, ns.pos) ? abs.slice(ns.pos.length) : undefined;
+  if (isUrlRooted(dir.pos)) return undefined;
+  return startsWith(abs, dir.pos) ? abs.slice(dir.pos.length) : undefined;
 }
 
 function linkTarget(handle: Handle<unknown>): string[] | undefined {

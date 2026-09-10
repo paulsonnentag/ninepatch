@@ -1,4 +1,4 @@
-/** One overlay per namespace: a private path tree plus a URL area. Cuts
+/** One overlay per directory: a private path tree plus a URL area. Cuts
  * block fall-through past this overlay at a node and its subtree —
  * permanently. `mutated` fires on every mount and unmount; `entries()`
  * lists both areas. */

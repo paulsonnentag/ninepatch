@@ -4,13 +4,13 @@
 
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
-import type { Namespace } from "@ninepatch/core";
+import type { Directory } from "@ninepatch/core";
 import type { Place } from "../types";
 
-export async function MapView(ns: Namespace) {
-  const dom = await ns.open<Element>("dom");
-  const places = await ns.open<Place[]>("places");
-  const selection = await ns.open<string | null>("selection");
+export async function MapView(dir: Directory) {
+  const dom = await dir.open<Element>("dom");
+  const places = await dir.open<Place[]>("places");
+  const selection = await dir.open<string | null>("selection");
 
   const dispose = render(() => {
     const pins = from(places, places.value);
@@ -44,7 +44,7 @@ export async function MapView(ns: Namespace) {
       </svg>
     );
   }, dom.value);
-  ns.signal.addEventListener("abort", dispose);
+  dir.signal.addEventListener("abort", dispose);
 }
 
 // Rough low-poly continents, [lat, lng] vertices. Recognizable, not accurate.

@@ -1,12 +1,12 @@
 /** §0 Boot: the repo (IndexedDB + BroadcastChannel — open the page in two
- * tabs and everything syncs), the seed documents, the origin namespace
+ * tabs and everything syncs), the seed documents, the origin directory
  * with the repo mounted as a server, and `demo` as a link to the seed
  * folder. Everything on the page hangs off `frame`. */
 
 import { Repo, type AnyDocumentId } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
-import { createNamespace, field, fromDoc } from "@ninepatch/core";
+import { createDirectory, field, fromDoc } from "@ninepatch/core";
 import type {
   CanvasDoc,
   ChatDoc,
@@ -23,12 +23,12 @@ export const repo = new Repo({
 
 export const seed = await findOrCreateSeed();
 
-export const ns = createNamespace();
+export const dir = createDirectory();
 
 // The repo, as a server — verbatim from the spec. Filters by protocol,
 // walks into documents itself, mounts every asked-for field as a live
-// handle. Nothing in the namespace knows what a document is.
-ns.serve({
+// handle. Nothing in the directory knows what a document is.
+dir.serve({
   async open(target, from) {
     const [url, ...fields] = target;
     if (!url.startsWith("automerge:")) return;
@@ -44,9 +44,9 @@ ns.serve({
   },
 });
 
-ns.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
+dir.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
 
-export const frame = ns.fork("page"); // the page renders under this
+export const frame = dir.fork("page"); // the page renders under this
 
 async function findOrCreateSeed(): Promise<Seed> {
   const KEY = "ninepatch:demo:folder";

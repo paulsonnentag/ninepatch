@@ -1,11 +1,11 @@
-/** §4 host: the route lives in the namespace as `location`, kept in step
+/** §4 host: the route lives in the directory as `location`, kept in step
  * with the browser's hash in both directions, and `selectedDoc` is a link
  * derived from it — retarget by navigating. */
 
-import { derive, type Namespace } from "@ninepatch/core";
+import { derive, type Directory } from "@ninepatch/core";
 import type { Route, Seed } from "./types";
 
-export async function setupRoute(frame: Namespace, seed: Seed): Promise<void> {
+export async function setupRoute(frame: Directory, seed: Seed): Promise<void> {
   const parse = (hash: string): Route => {
     const match = /^#doc=(.+)$/.exec(hash);
     const url = match ? decodeURIComponent(match[1]) : "";
@@ -16,7 +16,7 @@ export async function setupRoute(frame: Namespace, seed: Seed): Promise<void> {
   addEventListener(
     "hashchange",
     () => location.set(parse(window.location.hash)),
-    { signal: frame.signal } // the listener goes when the namespace does
+    { signal: frame.signal } // the listener goes when the directory does
   );
   location.subscribe((route) =>
     history.replaceState(null, "", toHash(route.docUrl))

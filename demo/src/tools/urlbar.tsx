@@ -4,13 +4,13 @@
 
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
-import type { Namespace } from "@ninepatch/core";
+import type { Directory } from "@ninepatch/core";
 import type { Folder, Route } from "../types";
 
-export async function UrlBar(ns: Namespace) {
-  const dom = await ns.open<Element>("dom");
-  const location = await ns.open<Route>("location");
-  const demo = await ns.open<Folder>("demo");
+export async function UrlBar(dir: Directory) {
+  const dom = await dir.open<Element>("dom");
+  const location = await dir.open<Route>("location");
+  const demo = await dir.open<Folder>("demo");
 
   const dispose = render(() => {
     const route = from(location, location.value);
@@ -35,5 +35,5 @@ export async function UrlBar(ns: Namespace) {
       </>
     );
   }, dom.value);
-  ns.signal.addEventListener("abort", dispose);
+  dir.signal.addEventListener("abort", dispose);
 }
