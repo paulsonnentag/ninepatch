@@ -14,7 +14,8 @@ export default async function Route(dir: Directory) {
     const demo = await dir.open<Folder>("demo"); // fall back to the seed's notes so the first open succeeds
     docUrl = demo.value.notes;
   }
-  dir.mount("location", { docUrl });
+  dir.mount("host", "ninepatch.org"); // the host is this tool's to set
+  dir.mount("location", { docUrl }); // just the part after the host
   const location = await dir.open<RouteDoc>("location");
   location.subscribe((route) => localStorage.setItem(KEY, route.docUrl));
   dir.mount(

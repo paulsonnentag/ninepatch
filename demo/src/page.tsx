@@ -145,8 +145,19 @@ export function Page() {
             notes2
           </button>
         </div>
-        <Mount dir={url} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
-        <Mount dir={url} name="Markdown" url={moduleUrl("markdown.tsx")} />
+        <div class="browser">
+          <div class="browser-chrome">
+            <span class="browser-dots">
+              <i />
+              <i />
+              <i />
+            </span>
+            <Mount dir={url} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
+          </div>
+          <div class="browser-page">
+            <Mount dir={url} name="Markdown" url={moduleUrl("markdown.tsx")} />
+          </div>
+        </div>
       </Section>
     </>
   );

@@ -1073,24 +1073,68 @@ body.resizing {
   r: 4.5;
 }
 
-/* url bar + editor */
-.urlbar {
-  width: 100%;
-  font:
-    0.9rem ui-monospace,
-    monospace;
-  padding: 0.45rem 0.7rem;
+/* the url example: a little browser — chrome bar with the url pill, the
+   editor as the page */
+.browser {
   border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.browser-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  background: #f1f1f3;
+  border-bottom: 1px solid var(--line);
+}
+
+.browser-dots {
+  display: flex;
+  gap: 5px;
+  flex: none;
+}
+
+.browser-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d5d5da;
+}
+
+.browser-chrome .tool {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.urlbar {
+  flex: 1;
+  min-width: 0;
+  font:
+    0.85rem ui-monospace,
+    monospace;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid transparent;
   border-radius: 99px;
   background: white;
-  margin-bottom: 0.75rem;
+  color: var(--ink);
+}
+
+.urlbar:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.browser-page .tool {
+  display: block;
 }
 
 .editor {
-  border: 1px solid var(--line);
-  border-radius: 8px;
   background: white;
-  overflow: hidden;
 }
 
 .editor .cm-editor {
