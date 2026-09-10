@@ -67,8 +67,10 @@ pre {
   font-size: 0.8rem;
 }
 
-/* the band: preview | code | directory, edge to edge. Columns come from
-   the dividers (draggable), height from the grip in the corner. */
+/* the band: preview | code | data, edge to edge. Columns come from the
+   dividers (draggable). Height comes from the data panel: the other two
+   are taken out of the flow and scroll inside whatever height that gives
+   them. The grip in the corner still overrides it. */
 .panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
@@ -77,8 +79,21 @@ pre {
   border-bottom: 1px solid var(--line);
   resize: vertical;
   overflow: hidden;
-  height: 36rem;
   min-height: 12rem;
+}
+
+.panel.example,
+.panel.code {
+  position: relative;
+}
+
+.panel.example .panel-body,
+.panel.code .panel-body {
+  position: absolute;
+  top: 1.55rem; /* the label row */
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .panel {
@@ -116,6 +131,7 @@ pre {
 /* a hairline between panes; the grab zone is wider than the line */
 .divider {
   position: relative;
+  z-index: 1; /* its grab zone overlaps the panes beside it */
   margin-top: 1.55rem; /* the label row */
   background: var(--line);
   cursor: col-resize;
@@ -227,12 +243,10 @@ body.dragging {
    on the left, and the selection previewed in a window on the right */
 .panel.context .panel-body {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .windows {
-  height: 100%;
-  overflow: auto;
   padding: 1rem;
   font-size: 0.8rem;
   background: #f4f4f6;

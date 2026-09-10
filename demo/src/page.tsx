@@ -81,7 +81,7 @@ export function Page() {
       </Section>
 
       <Section
-        title="Two users, one chat"
+        title="Alice and Bob"
         chain={[frame, chat]}
         sources={[{ name: "chat.tsx", code: chatSource }]}
         prose={
