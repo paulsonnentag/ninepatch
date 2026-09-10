@@ -445,7 +445,7 @@ const focusedProc = () => hoveredProc() ?? pinnedProc();
 
 /** A process, beside the window of the directory it runs in. Hover or
  * click and lines run to the entries it has open; click also shows its
- * source in the code panel; the small × kills it. */
+ * source in the code panel. */
 function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
   const p = props.process;
   onCleanup(() => {
@@ -466,16 +466,6 @@ function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
       }}
     >
       <span class="proc-name">{p.name}</span>
-      <span
-        class="proc-kill"
-        title="kill"
-        onClick={(e) => {
-          e.stopPropagation();
-          p.dir.close();
-        }}
-      >
-        ×
-      </span>
     </button>
   );
 }
@@ -536,34 +526,42 @@ function ProcLines() {
     if (!chip || !body) return [];
     const c = chip.getBoundingClientRect();
     const b = body.getBoundingClientRect();
-    const out: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    const start = { x: c.left, y: c.top + c.height / 2 };
+    const trunk = (b.right + c.left) / 2; // down the gutter beside the window
+    const out: string[] = [];
     for (const name of opened()) {
       const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
       if (!item) continue;
       const r = item.getBoundingClientRect();
       if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
-      out.push({
-        x1: c.left,
-        y1: c.top + c.height / 2,
-        x2: r.right - 6,
-        y2: r.top + r.height / 2,
-      });
+      out.push(hook(start, trunk, { x: r.right - 6, y: r.top + r.height / 2 }));
     }
     return out;
   });
 
   return (
     <svg class="proc-lines" aria-hidden="true">
-      <For each={lines()}>
-        {(l) => (
-          <>
-            <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
-            <circle cx={l.x2} cy={l.y2} r="2.5" />
-          </>
-        )}
-      </For>
+      <For each={lines()}>{(d) => <path d={d} />}</For>
     </svg>
   );
+}
+
+type Point = { x: number; y: number };
+
+/** The connector: out of the node, down the trunk, and a rounded elbow
+ * hooking left into the row. */
+function hook(start: Point, trunk: number, end: Point): string {
+  const radius = Math.min(6, Math.abs(end.y - start.y) / 2);
+  if (radius < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  const down = end.y > start.y ? 1 : -1;
+  return [
+    `M ${start.x} ${start.y}`,
+    `L ${trunk + radius} ${start.y}`,
+    `Q ${trunk} ${start.y} ${trunk} ${start.y + down * radius}`,
+    `L ${trunk} ${end.y - down * radius}`,
+    `Q ${trunk} ${end.y} ${trunk - radius} ${end.y}`,
+    `L ${end.x} ${end.y}`,
+  ].join(" ");
 }
 
 /** The selected entry, in full: where it came from, if inherited — click

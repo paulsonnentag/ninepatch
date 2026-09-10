@@ -373,25 +373,8 @@ body.resizing {
   color: var(--accent);
 }
 
-.proc-kill {
-  display: none;
-  margin-right: -0.2rem;
-  padding: 0 0.15rem;
-  color: #909096;
-  line-height: 1;
-}
-
-.proc:hover .proc-kill,
-.proc.focused .proc-kill {
-  display: inline;
-}
-
-.proc-kill:hover {
-  color: #d33;
-}
-
-/* one overlay for the whole page: lines from the focused process to the
-   entries it has open */
+/* one overlay for the whole page: connectors from the focused process
+   that hook into the entries it has open */
 .proc-lines {
   position: fixed;
   inset: 0;
@@ -401,13 +384,11 @@ body.resizing {
   z-index: 40;
 }
 
-.proc-lines line {
+.proc-lines path {
   stroke: var(--accent);
   stroke-width: 1.2;
-}
-
-.proc-lines circle {
-  fill: var(--accent);
+  fill: none;
+  stroke-linecap: round;
 }
 
 .window.folded .titlebar {
