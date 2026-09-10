@@ -3,7 +3,8 @@
   --ink: #1a1a1a;
   --faint: #666;
   --line: #ddd;
-  --accent: #6d28d9;
+  --accent: #2f6fed;
+  --selection: #2f6fed;
 }
 
 * {
@@ -70,12 +71,13 @@ pre {
    the dividers (draggable), height from the grip in the corner. */
 .panels {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7px minmax(0, 1fr) 7px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   margin-top: 1rem;
   border-bottom: 1px solid var(--line);
   resize: vertical;
   overflow: hidden;
+  height: 36rem;
   min-height: 12rem;
 }
 
@@ -111,26 +113,28 @@ pre {
   background: #f6f6f6;
 }
 
+/* a hairline between panes; the grab zone is wider than the line */
 .divider {
   position: relative;
   margin-top: 1.55rem; /* the label row */
-  border-top: 1px solid var(--line);
+  background: var(--line);
   cursor: col-resize;
+  transition: background-color 0.1s;
 }
 
 .divider::before {
   content: "";
   position: absolute;
-  left: 3px;
+  left: -3px;
+  right: -3px;
   top: 0;
   bottom: 0;
-  border-left: 1px solid var(--line);
-  transition: border-color 0.1s;
+  cursor: col-resize;
 }
 
-.divider:hover::before,
-body.dragging .divider::before {
-  border-left: 2px solid var(--accent);
+.divider:hover,
+body.dragging .divider {
+  background: var(--accent);
 }
 
 body.dragging {
@@ -175,7 +179,6 @@ body.dragging {
   border-radius: 0;
   flex: 1;
   min-height: 0;
-  max-height: 36rem;
   overflow: auto;
 }
 
@@ -220,145 +223,355 @@ body.dragging {
   color: #999;
 }
 
-/* the context tree */
-.node {
-  margin: 0;
+/* the namespaces as windows: one per namespace, hung in their hierarchy
+   on the left, and the selection previewed in a window on the right */
+.panel.context .panel-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.windows {
+  height: 100%;
+  overflow: auto;
+  padding: 1rem;
   font-size: 0.8rem;
+  background: #f4f4f6;
 }
 
-.node > summary {
-  cursor: pointer;
-  padding: 0.15rem 0;
-  list-style: none;
+/* the window is a fixed height; the list and the preview scroll inside */
+.window-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  align-items: stretch;
 }
 
-.node > summary::-webkit-details-marker {
-  display: none;
+.window-body .entries {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
 }
 
-.node > summary::before {
-  content: "▷";
-  font-size: 0.65rem;
-  color: var(--faint);
-  width: 0.9rem;
-  flex: none;
+.window.open .entries {
+  flex: 0 0 45%;
+  border-right: 1px solid var(--line);
 }
 
-.node[open] > summary::before {
-  content: "▽";
-}
-
-.node-name {
-  font-weight: 600;
-}
-
-.node > .entries {
-  margin-left: 0.9rem;
-}
-
-/* children hang off a line drawn down from the parent, a tick across to
-   each; a namespace that changed nothing isn't drawn, so the container may
-   end up with no boxes in it — then neither is the line */
-.node > .node-children {
-  --tick: 0.8rem;
-  position: relative;
-  margin-left: 0.35rem;
-  padding-left: var(--tick);
-  padding-top: 0.15rem;
+.window {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  height: 250px;
+  border: 1px solid #d0d0d0;
+  border-radius: 10px;
+  background: white;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
 }
 
-.node > .node-children:not(:has(> .node)) {
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.5rem 0 0.75rem;
+  flex: none;
+  background: linear-gradient(#f4f4f4, #e8e8e8);
+  border-bottom: 1px solid #d4d4d4;
+  cursor: default;
+  user-select: none;
+}
+
+.window.folded {
+  height: auto;
+}
+
+.window.folded .titlebar {
+  border-bottom: none;
+}
+
+.fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.fold:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.fold-icon {
+  --icon: currentColor;
+  width: 0.85rem;
+  height: 0.85rem;
+  fill: none;
+  stroke-width: 1.6;
+}
+
+.window-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #444;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a namespace's window, and the windows below it hanging off a line drawn
+   down from it */
+.folder-node {
+  --tick: 1rem;
+  min-width: 0;
+}
+
+.folder-node + .folder-node {
+  margin-top: 0.9rem;
+}
+
+.folder-children {
+  position: relative;
+  margin-left: 1rem;
+  padding-left: var(--tick);
+  padding-top: 0.9rem;
+}
+
+.folder-children:not(:has(> .folder-node)) {
   display: none;
 }
 
-.node > .node-children::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0.7rem;
-  border-left: 1px solid var(--line);
-}
-
-.node-children > .node {
+/* each child draws its own stretch of the trunk, so the line ends at the
+   last child's tick, and the gap above the first child is bridged too */
+.folder-children > .folder-node {
   position: relative;
 }
 
-.node-children > .node::before {
+.folder-children > .folder-node::before {
   content: "";
   position: absolute;
   left: calc(-1 * var(--tick));
-  top: 0.7rem;
-  width: calc(var(--tick) - 0.15rem);
-  border-top: 1px solid var(--line);
+  top: -0.9rem;
+  bottom: 0;
+  border-left: 1px solid #c8c8cc;
 }
 
-.entries {
-  border-collapse: collapse;
-  width: calc(100% - 0.9rem);
-  margin: 0.15rem 0 0.4rem;
+.folder-children > .folder-node:last-child::before {
+  bottom: auto;
+  height: 1.9rem;
 }
 
-.entries td {
-  border: 1px solid var(--line);
-  padding: 0.15rem 0.4rem;
-  vertical-align: top;
-  overflow-wrap: anywhere;
+.folder-children > .folder-node::after {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--tick));
+  top: 1rem;
+  width: calc(var(--tick) - 1px);
+  border-top: 1px solid #c8c8cc;
 }
 
-.entries td.entry-path {
-  width: 34%;
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  cursor: default;
+  white-space: nowrap;
+  user-select: none;
 }
 
-.entries td.entry-value.expandable {
+.tree-item:hover {
+  background: #f3f3f3;
+}
+
+.tree-item.selected,
+.tree-item.inherited.selected {
+  background: var(--selection);
+  color: white;
+}
+
+.tree-item.selected code,
+.tree-item.selected .url,
+.tree-item.selected .dom-tag,
+.tree-item.selected .dom-attr,
+.tree-item.selected .dom-value,
+.tree-item.selected i {
+  color: white;
+}
+
+.tree-item.selected .icon {
+  --icon: white;
+  --icon-fill: rgba(255, 255, 255, 0.25);
+}
+
+/* inherited entries sit on a grey band above the namespace's own */
+.tree-item.inherited {
+  background: #f7f7f8;
+}
+
+.tree-item.inherited:hover {
+  background: #efeff1;
+}
+
+/* where a selection below was inherited from */
+.tree-item.origin {
+  background: #dbe7fd;
+}
+
+.tree-name {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  color: var(--faint);
+}
+
+.tree-value code {
+  font-size: 0.72rem;
+}
+
+/* icons: a folder, and a file marked by what it holds */
+.icon {
+  --icon: #6b7280;
+  --icon-fill: #f3f4f6;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: var(--icon-fill);
+  stroke: var(--icon);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.file-icon .corner {
+  fill: none;
+}
+
+.preview {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.5rem 0.75rem;
+  background: #fafafa;
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.preview-path {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-where {
+  font-size: 0.7rem;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.preview-from {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--selection);
   cursor: pointer;
 }
 
-.entries td.entry-value.expandable:hover,
-.entries td.entry-value:focus {
-  background: #faf8ff;
-  outline: none;
+.preview-from:hover {
+  text-decoration: underline;
 }
 
-.entries tr.expanded td {
-  border-bottom-color: transparent;
-}
-
-.entries tr.entry-editor td {
-  padding: 0.3rem 0.5rem 0.5rem;
-  background: #fbfbfb;
-  outline: none;
-}
-
-.entries tr.cut td {
+.preview-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--faint);
-  text-decoration: line-through;
+  cursor: pointer;
 }
 
-.entries code {
-  font-size: 0.75rem;
+.preview-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--ink);
 }
 
-.entry-path .url,
-.entry-value .url,
+.preview-close .icon {
+  --icon: currentColor;
+  width: 0.8rem;
+  height: 0.8rem;
+  fill: none;
+  stroke-width: 1.6;
+}
+
+/* the dom tree: one line per tag, indented like the inspector */
+.dom-tree {
+  font:
+    0.72rem/1.5 ui-monospace,
+    monospace;
+  white-space: nowrap;
+}
+
+.dom-line {
+  padding-left: calc(var(--depth, 0) * 1rem);
+  border-radius: 3px;
+}
+
+.dom-line:hover {
+  background: #e8f0fe;
+}
+
+.dom-text,
+.dom-more {
+  color: #444;
+}
+
+/* the box over the hovered element, drawn once for the page */
+.dom-highlight {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: rgba(47, 111, 237, 0.18);
+  outline: 1px solid var(--selection);
+  border-radius: 2px;
+}
+
+.tree-item .url,
+.preview .url,
 .copy-url .url {
   color: var(--accent);
-}
-
-/* a dom element as markup, one line, cut with an ellipsis */
-.entry-value code.dom {
-  display: block;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: crosshair;
 }
 
 .dom-tag {
@@ -371,13 +584,6 @@ body.dragging {
 
 .dom-value {
   color: #2e7d32;
-}
-
-/* what the hovered row points at, in the page */
-.ns-highlight {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .copy-url {
@@ -410,7 +616,6 @@ body.dragging {
   font:
     0.75rem/1.6 ui-monospace,
     monospace;
-  max-height: 20rem;
   overflow: auto;
 }
 

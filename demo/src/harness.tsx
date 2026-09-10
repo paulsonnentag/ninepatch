@@ -1,9 +1,12 @@
 /** The page furniture: the host side of a tool (`Mount`), and a section —
  * prose plus three panels: the live example, the code behind it in tabs,
- * and the namespaces it runs in, drawn as a tree with a table per node.
- * Handles feed Solid through `from()`: a handle is a store. */
+ * and the namespaces it runs in, drawn as a file window: the hierarchy
+ * of namespaces as folders with their entries as files, and a preview of
+ * whatever is selected. Handles feed Solid through
+ * `from()`: a handle is a store. */
 
 import {
+  createEffect,
   createMemo,
   createResource,
   createSignal,
@@ -15,14 +18,10 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js";
-import {
-  hasScheme,
-  type Entry,
-  type Handle,
-  type Namespace,
-} from "@ninepatch/core";
+import { hasScheme, type Handle, type Namespace } from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
+import { render } from "solid-js/web";
 import { RawEditor } from "./raw-editor";
 import type { Tool } from "./types";
 
@@ -53,13 +52,15 @@ export function Mount(props: {
 }
 
 /** A section: title and prose at reading width, then a band across the
- * whole page — preview | code | namespace — with draggable dividers between
+ * whole page — preview | code | data — with draggable dividers between
  * the three and a resize grip for its height. */
 export function Section(props: {
   title: string;
   prose: JSX.Element;
   sources: Source[];
-  context: Namespace;
+  /** The section's namespace, last, with everything it was forked from
+   * before it — that's where its inherited entries come from. */
+  chain: Namespace[];
   children: JSX.Element;
 }) {
   const [widths, setWidths] = createSignal([1, 1, 1]);
@@ -105,7 +106,7 @@ export function Section(props: {
         style={{
           "grid-template-columns": widths()
             .map((w) => `minmax(0, ${w}fr)`)
-            .join(" 7px "),
+            .join(" 1px "),
         }}
       >
         <div class="panel example">
@@ -121,9 +122,9 @@ export function Section(props: {
         </div>
         <div class="divider" onPointerDown={[drag, 1]} />
         <div class="panel context">
-          <h3>namespace</h3>
+          <h3>data</h3>
           <div class="panel-body">
-            <ContextTree ns={props.context} />
+            <Windows chain={props.chain} />
           </div>
         </div>
       </div>
@@ -174,154 +175,280 @@ function highlight(code: string): JSX.Element[] {
   return out;
 }
 
-// --- the tree -----------------------------------------------------------------
+// --- the windows --------------------------------------------------------------
 
-/** One namespace: its name, its own entries as a table, its children below.
- * A namespace that changed nothing — no mounts of its own — is transparent
- * to reads, so it's transparent here too: it isn't drawn, and its children
- * take its place. Only the root is always drawn. The viewer's own opens (to
- * show what a link points at) go through a fork made before it starts
- * listening, so they never appear in the picture. */
-function ContextTree(props: { ns: Namespace; depth?: number }) {
-  const depth = props.depth ?? 0;
-  const probe = tryFork(props.ns);
+type EntryRow = {
+  key: string;
+  path: string[];
+  handle: Handle<unknown>;
+  /** Whose overlay it sits in: this namespace, or one it inherits from. */
+  owner: Namespace;
+  inherited: boolean;
+};
+
+/** An entry picked in some window: the row, the namespace whose window it
+ * was picked in, and that window's probe for resolving links. */
+type Selection = { row: EntryRow; ns: Namespace; probe: Namespace | undefined };
+
+/** How a window is found from elsewhere — the preview's "from" link
+ * unfolds the window the entry came from and scrolls to it. */
+type Registry = Map<Namespace, () => void>;
+
+/** The namespaces of a section: one window per namespace, hung in their
+ * hierarchy. Selecting an entry opens a preview inside its window. */
+function Windows(props: { chain: Namespace[] }) {
+  const [selected, setSelected] = createSignal<Selection>();
+  const registry: Registry = new Map();
+  mountHighlight();
+  return (
+    <div class="windows" role="tree">
+      <Node
+        chain={props.chain}
+        depth={0}
+        selected={selected()}
+        onSelect={setSelected}
+        registry={registry}
+      />
+    </div>
+  );
+}
+
+/** One namespace in the tree: a window named after it, listing what
+ * `open` would find from here — what it inherits from the namespaces it
+ * was forked from, faint, then its own — and below it the namespaces below
+ * it, each its own window hanging off a line from this one. A namespace
+ * that mounted nothing of its own is transparent to reads, so it is
+ * transparent here too: not drawn, its children in its place (the top one
+ * is kept as long as it has anything to list). The viewer's
+ * own opens (to show what a link points at) go through a fork made before
+ * it starts listening, so they never show up as windows. What is selected
+ * in this window is previewed beside its list. */
+function Node(props: {
+  chain: Namespace[];
+  depth: number;
+  selected: Selection | undefined;
+  onSelect: (sel: Selection | undefined) => void;
+  registry: Registry;
+}) {
+  const self = props.chain[props.chain.length - 1];
+  const probe = tryFork(self);
   onCleanup(() => probe?.close());
-  const entries = createStableEntries(props.ns);
-  const all = from(props.ns.children, props.ns.children.value);
-  const children = () => all().filter((c) => c !== probe);
-  const transparent = () => depth > 0 && entries().length === 0;
-  const label = () => props.ns.name.split("/").map(shorten).join("/");
+  const rows = createRows(props.chain);
+  const own = () => rows().filter((row) => !row.inherited);
+  const kids = from(self.children, self.children.value);
+  const children = () => kids().filter((c) => c !== probe);
+  /** Nothing to show: below the top, a namespace that mounted nothing;
+   * at the top, one with nothing to list at all. */
+  const transparent = () =>
+    props.depth > 0 ? own().length === 0 : rows().length === 0;
+  const [folded, setFolded] = createSignal(false);
+  let el!: HTMLDivElement;
+
+  const isSelected = (row: EntryRow) =>
+    props.selected?.ns === self && props.selected.row.key === row.key;
+  /** This row is where a selection somewhere below was inherited from. */
+  const isOrigin = (row: EntryRow) =>
+    props.selected !== undefined &&
+    props.selected.ns !== self &&
+    props.selected.row.owner === self &&
+    props.selected.row.key === row.key;
+  /** The selection, if it is in this window. */
+  const mine = () => (props.selected?.ns === self ? props.selected : undefined);
+
+  props.registry.set(self, () => {
+    setFolded(false);
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+  onCleanup(() => props.registry.delete(self));
+
+  // a selection that no longer exists — the entry went, or this namespace
+  // closed — is dropped
+  createEffect(() => {
+    const sel = props.selected;
+    if (sel?.ns === self) {
+      const row = rows().find((r) => r.key === sel.row.key);
+      if (!row) props.onSelect(undefined);
+      else if (row !== sel.row) props.onSelect({ ...sel, row });
+    }
+  });
+  onCleanup(() => {
+    if (props.selected?.ns === self) props.onSelect(undefined);
+  });
 
   const below = () => (
     <For each={children()}>
-      {(child) => <ContextTree ns={child} depth={depth + 1} />}
+      {(child) => (
+        <Node
+          chain={[...props.chain, child]}
+          depth={transparent() ? props.depth : props.depth + 1}
+          selected={props.selected}
+          onSelect={props.onSelect}
+          registry={props.registry}
+        />
+      )}
     </For>
   );
 
   return (
     <Show when={!transparent()} fallback={below()}>
-      <details class="node" open={depth < 2}>
-        <summary>
-          <span class="node-name" title={props.ns.name}>
-            {label()}
-          </span>
-        </summary>
-        <Show when={entries().length > 0}>
-          <table class="entries">
-            <tbody>
-              <For each={entries()}>
-                {(entry) => (
-                  <EntryRow entry={entry} ns={props.ns} probe={probe} />
+      <div class="folder-node">
+        <div
+          class="window"
+          classList={{ open: mine() !== undefined, folded: folded() }}
+          ref={el}
+        >
+          <div class="titlebar" title={self.name}>
+            <span class="window-title">{label(self.name)}</span>
+            <button
+              class="fold"
+              title={folded() ? "expand" : "minimize"}
+              aria-expanded={!folded()}
+              onClick={() => setFolded(!folded())}
+            >
+              <FoldIcon folded={folded()} />
+            </button>
+          </div>
+          <Show when={!folded()}>
+            <div class="window-body">
+              <div class="entries">
+                <For each={rows()}>
+                  {(row) => (
+                    <div
+                      class="tree-item"
+                      classList={{
+                        selected: isSelected(row),
+                        origin: isOrigin(row),
+                        inherited: row.inherited,
+                      }}
+                      title={
+                        row.inherited
+                          ? `from ${row.owner.name}`
+                          : `mounted here`
+                      }
+                      onClick={() => props.onSelect({ row, ns: self, probe })}
+                    >
+                      <FileIcon />
+                      <span class="tree-name">{row.path.join("/")}</span>
+                      <span class="tree-value">
+                        <Value
+                          handle={row.handle}
+                          path={row.path}
+                          probe={probe}
+                        />
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </div>
+              <Show when={mine()} keyed>
+                {(sel) => (
+                  <Preview
+                    selection={sel}
+                    reveal={(ns) => props.registry.get(ns)?.()}
+                    close={() => props.onSelect(undefined)}
+                  />
                 )}
-              </For>
-            </tbody>
-          </table>
-        </Show>
-        <div class="node-children">{below()}</div>
-      </details>
+              </Show>
+            </div>
+          </Show>
+        </div>
+        <div class="folder-children">{below()}</div>
+      </div>
     </Show>
   );
 }
 
-/** A row per entry: the path, and the value — collapsed to a one-line
- * summary until focus lands in it, then the editor underneath. */
-function EntryRow(props: {
-  entry: Entry;
-  ns: Namespace;
-  probe: Namespace | undefined;
+/** The selected entry, in full: where it came from, if inherited — click
+ * the name to go to that window — and its value: a link as the document it points at
+ * with the URL above, copyable; an element as its DOM tree; anything else
+ * in the raw editor. */
+function Preview(props: {
+  selection: Selection;
+  reveal: (ns: Namespace) => void;
+  close: () => void;
 }) {
-  const [expanded, setExpanded] = createSignal(false);
-  const handle = props.entry.handle;
-  const expandable = () =>
-    handle !== undefined && !(readValue(handle) instanceof Element);
-  let cell!: HTMLTableCellElement;
-  let editor: HTMLTableCellElement | undefined;
-  const inside = (el: EventTarget | null) =>
-    el instanceof Node && (cell.contains(el) || !!editor?.contains(el));
-
+  const { row, probe } = props.selection;
   return (
-    <>
-      <tr classList={{ cut: !handle, expanded: expanded() }}>
-        <td class="entry-path" title={props.entry.path.join("/")}>
-          <For each={props.entry.path}>
-            {(name, i) => (
-              <>
-                <Show when={i() > 0}>/</Show>
-                <span classList={{ url: hasScheme(name) }}>
-                  {shorten(name)}
-                </span>
-              </>
-            )}
-          </For>
-        </td>
-        <td
-          class="entry-value"
-          classList={{ expandable: expandable() }}
-          ref={cell}
-          tabindex={expandable() ? 0 : undefined}
-          onFocusIn={() => expandable() && setExpanded(true)}
-          onFocusOut={(e) => !inside(e.relatedTarget) && setExpanded(false)}
-        >
-          <Show when={handle} fallback={<i>cut</i>}>
-            <Value
-              handle={handle!}
-              path={props.entry.path}
-              probe={props.probe}
-              expanded={expanded()}
-              slot="summary"
-            />
-          </Show>
-        </td>
-      </tr>
-      <Show when={expanded() && handle}>
-        <tr class="entry-editor">
-          <td
-            colspan={2}
-            tabindex={-1}
-            ref={editor}
-            onFocusOut={(e) => !inside(e.relatedTarget) && setExpanded(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && e.target === e.currentTarget)
-                e.currentTarget.blur();
-            }}
-          >
-            <Value
-              handle={handle!}
-              path={props.entry.path}
-              probe={props.probe}
-              expanded={expanded()}
-              slot="editor"
-            />
-          </td>
-        </tr>
-      </Show>
-    </>
+    <div class="preview">
+      <div class="preview-head">
+        <FileIcon />
+        <code class="preview-path">{row.path.join("/")}</code>
+        <Show when={row.inherited}>
+          <span class="preview-where">
+            from{" "}
+            <button
+              class="preview-from"
+              onClick={() => props.reveal(row.owner)}
+            >
+              {label(row.owner.name)}
+            </button>
+          </span>
+        </Show>
+        <button class="preview-close" title="close" onClick={props.close}>
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+          </svg>
+        </button>
+      </div>
+      <Value handle={row.handle} path={row.path} probe={probe} editor />
+    </div>
   );
 }
 
-/** What a value looks like, in two slots: the summary line, and the editor
- * shown under it once expanded. A link is drawn as what it points at — the
- * URL itself appears above the editor, copyable — by opening it through
- * the probe so the document follows the link live. */
+/** Minimize (a bar) or expand (a bar and a post: a plus). */
+function FoldIcon(props: { folded: boolean }) {
+  return (
+    <svg class="icon fold-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 8h9" />
+      <Show when={props.folded}>
+        <path d="M8 3.5v9" />
+      </Show>
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg class="icon file-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        class="page"
+        d="M3.5 1.5h6l3 3v9.5a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5z"
+      />
+      <path class="corner" d="M9.5 1.5v3h3" />
+    </svg>
+  );
+}
+
+/** What a value looks like: a one-line summary in a row, or, with
+ * `editor`, the full thing. A link is drawn as what it points at — the URL
+ * itself appears above the editor, copyable — by opening it through the
+ * probe so the document follows the link live. An element has no summary;
+ * its editor is its DOM tree. */
 function Value(props: {
   handle: Handle<unknown>;
   path: string[];
   probe: Namespace | undefined;
-  expanded: boolean;
-  slot: "summary" | "editor";
+  editor?: boolean;
 }) {
   const value = from(props.handle, readValue(props.handle));
   const isLink = () =>
     typeof value() === "string" && hasScheme(value() as string);
+  const isElement = () => value() instanceof Element;
   return (
     <Show
       when={isLink() && props.probe}
       fallback={
         <Show
-          when={props.slot === "editor"}
-          fallback={<Summary value={value()} />}
+          when={isElement()}
+          fallback={
+            <Show when={props.editor} fallback={<Summary value={value()} />}>
+              <RawEditor handle={props.handle} />
+            </Show>
+          }
         >
-          <RawEditor handle={props.handle} />
+          <Show when={props.editor}>
+            <DomTree element={value() as Element} />
+          </Show>
         </Show>
       }
     >
@@ -337,7 +464,7 @@ function Value(props: {
           url={value() as string}
           path={props.path}
           probe={props.probe!}
-          slot={props.slot}
+          editor={props.editor}
         />
       </ErrorBoundary>
     </Show>
@@ -350,7 +477,7 @@ function Linked(props: {
   url: string;
   path: string[];
   probe: Namespace;
-  slot: "summary" | "editor";
+  editor?: boolean;
 }) {
   let held: Namespace | undefined;
   const [opened] = createResource(
@@ -362,10 +489,7 @@ function Linked(props: {
       {(target) => {
         const value = from(target(), readValue(target()));
         return (
-          <Show
-            when={props.slot === "editor"}
-            fallback={<Summary value={value()} />}
-          >
+          <Show when={props.editor} fallback={<Summary value={value()} />}>
             <CopyUrl url={props.url} />
             <RawEditor handle={target()} />
           </Show>
@@ -394,7 +518,7 @@ function CopyUrl(props: { url: string }) {
 }
 
 /** A one-line reading of a value: what kind of thing it is, not what it
- * says. Elements by tag, links by URL, objects by their keys. */
+ * says. Links by URL, objects by their keys. */
 function Summary(props: { value: unknown }) {
   return <>{summarize(props.value)}</>;
 }
@@ -402,7 +526,6 @@ function Summary(props: { value: unknown }) {
 function summarize(v: unknown): JSX.Element {
   if (v === undefined) return <i>—</i>;
   if (v === null) return <code>null</code>;
-  if (v instanceof Element) return <DomSummary element={v} />;
   if (typeof v === "string")
     return hasScheme(v) ? (
       <code class="url" title={v}>
@@ -427,41 +550,65 @@ function summarize(v: unknown): JSX.Element {
   return <code>{String(v)}</code>;
 }
 
-/** A DOM element as its own markup — the opening tag with every attribute,
- * `…` for whatever is inside, the closing tag — on one line, cut with an
- * ellipsis when it spills. Hovering it lights up the element in the page. */
-function DomSummary(props: { element: Element }) {
-  const el = () => props.element;
-  const tag = () => el().tagName.toLowerCase();
-  const read = () => ({
-    attrs: [...el().attributes]
-      .map((a) => ({
-        name: a.name,
-        value:
-          a.name === "class"
-            ? a.value.replace(/\bns-highlight\b/, "").trim()
-            : a.value,
-      }))
-      .filter((a) => a.name !== "class" || a.value !== ""),
-    filled: el().childNodes.length > 0,
+// --- the dom tree -------------------------------------------------------------
+
+const MAX_DOM_NODES = 400;
+
+/** An element as the inspector would show it: every descendant, nested,
+ * tags with their attributes and text in between, redrawn as the element
+ * changes. Hovering a line lights up that element in the page. */
+function DomTree(props: { element: Element }) {
+  const [version, bump] = createSignal(0, { equals: false });
+  const observer = new MutationObserver(() => bump(0));
+  observer.observe(props.element, {
+    attributes: true,
+    childList: true,
+    characterData: true,
+    subtree: true,
   });
-  const [shape, setShape] = createSignal(read());
-  const observer = new MutationObserver(() => setShape(read()));
-  observer.observe(el(), { attributes: true, childList: true });
   onCleanup(() => observer.disconnect());
-  const attrs = () => shape().attrs;
-  const light = (on: boolean) => el().classList.toggle("ns-highlight", on);
-  onCleanup(() => light(false));
+  const lines = createMemo(() => {
+    version();
+    const out: DomLine[] = [];
+    flatten(props.element, 0, out);
+    return out;
+  });
   return (
-    <code
-      class="dom"
-      title={el().outerHTML.slice(0, 400)}
-      onMouseEnter={() => light(true)}
-      onMouseLeave={() => light(false)}
-    >
+    <div class="dom-tree">
+      <For each={lines()}>{(line) => renderLine(line)}</For>
+    </div>
+  );
+}
+
+function renderLine(line: DomLine): JSX.Element {
+  const style = { "--depth": line.depth };
+  if (line.kind === "text" || line.kind === "more")
+    return (
+      <div
+        class="dom-line"
+        classList={{ "dom-more": line.kind === "more" }}
+        style={style}
+      >
+        <span class="dom-text">{line.text}</span>
+      </div>
+    );
+  const hover = {
+    onMouseEnter: () => setLit(line.element),
+    onMouseLeave: () => setLit(undefined),
+  };
+  if (line.kind === "close")
+    return (
+      <div class="dom-line" style={style} {...hover}>
+        {"</"}
+        <span class="dom-tag">{line.tag}</span>
+        {">"}
+      </div>
+    );
+  return (
+    <div class="dom-line" style={style} {...hover}>
       {"<"}
-      <span class="dom-tag">{tag()}</span>
-      <For each={attrs()}>
+      <span class="dom-tag">{line.tag}</span>
+      <For each={line.attrs}>
         {(a) => (
           <>
             {" "}
@@ -472,44 +619,159 @@ function DomSummary(props: { element: Element }) {
           </>
         )}
       </For>
-      {">"}
-      <Show when={shape().filled}>…</Show>
-      {"</"}
-      <span class="dom-tag">{tag()}</span>
-      {">"}
-    </code>
+      {line.empty ? " />" : ">"}
+    </div>
+  );
+}
+
+type DomLine =
+  | {
+      kind: "open";
+      depth: number;
+      element: Element;
+      tag: string;
+      attrs: { name: string; value: string }[];
+      empty: boolean;
+    }
+  | { kind: "close"; depth: number; element: Element; tag: string }
+  | { kind: "text"; depth: number; text: string }
+  | { kind: "more"; depth: number; text: string };
+
+function flatten(el: Element, depth: number, out: DomLine[]): void {
+  if (out.length >= MAX_DOM_NODES) {
+    if (out[out.length - 1]?.kind !== "more")
+      out.push({ kind: "more", depth, text: "…" });
+    return;
+  }
+  const tag = el.tagName.toLowerCase();
+  const attrs = [...el.attributes].map((a) => ({
+    name: a.name,
+    value: a.value.length > 60 ? `${a.value.slice(0, 57)}…` : a.value,
+  }));
+  const kids = [...el.childNodes].filter(
+    (n) => n instanceof Element || n.textContent?.trim()
+  );
+  out.push({
+    kind: "open",
+    depth,
+    element: el,
+    tag,
+    attrs,
+    empty: !kids.length,
+  });
+  if (!kids.length) return;
+  for (const kid of kids) {
+    if (kid instanceof Element) flatten(kid, depth + 1, out);
+    else {
+      const text = kid.textContent!.trim();
+      out.push({
+        kind: "text",
+        depth: depth + 1,
+        text: text.length > 80 ? `${text.slice(0, 77)}…` : text,
+      });
+    }
+  }
+  out.push({ kind: "close", depth, element: el, tag });
+}
+
+/** The element under the mouse in a DOM tree, and a box drawn over it in
+ * the page — one box for the whole page, mounted on first use. */
+const [lit, setLit] = createSignal<Element>();
+let highlightMounted = false;
+
+function mountHighlight() {
+  if (highlightMounted) return;
+  highlightMounted = true;
+  render(() => <Highlight />, document.body);
+}
+
+function Highlight() {
+  const rect = () => {
+    const el = lit();
+    if (!el) return undefined;
+    const r = el.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height };
+  };
+  return (
+    <Show when={rect()}>
+      {(r) => (
+        <div
+          class="dom-highlight"
+          style={{
+            top: `${r().top}px`,
+            left: `${r().left}px`,
+            width: `${r().width}px`,
+            height: `${r().height}px`,
+          }}
+        />
+      )}
+    </Show>
   );
 }
 
 // --- helpers ------------------------------------------------------------------
 
-/** The namespace's path entries — URL-keyed fills are the plumbing, not
- * the picture — with row identity kept per path, so a fill landing
- * elsewhere in the overlay doesn't rebuild every row. */
-function createStableEntries(ns: Namespace): Accessor<Entry[]> {
-  const raw = from(ns.entries, ns.entries.value);
-  let cache = new Map<string, Entry>();
+/** The rows of a column: what a walk from the last namespace in the chain
+ * would find, inherited entries first and the namespace's own after them.
+ * Resolved nearest overlay first: a path already seen is shadowed, a cut
+ * hides everything at or below it from further out. URL-keyed fills are
+ * the plumbing, not the picture. Row identity is kept per path so a
+ * fill landing elsewhere doesn't rebuild every row. */
+function createRows(chain: Namespace[]): Accessor<EntryRow[]> {
+  const layers = [...chain]
+    .reverse()
+    .map((ns) => ({ ns, entries: from(ns.entries, ns.entries.value) }));
+  let cache = new Map<string, EntryRow>();
   return createMemo(() => {
-    const next = new Map<string, Entry>();
-    const out: Entry[] = [];
-    for (const entry of raw()) {
-      if (hasScheme(entry.path[0])) continue;
-      const key = entry.path.join("/");
-      const prev = cache.get(key);
-      const kept = prev && prev.handle === entry.handle ? prev : entry;
-      next.set(key, kept);
-      out.push(kept);
-    }
+    const next = new Map<string, EntryRow>();
+    const rows: EntryRow[] = [];
+    const seen = new Set<string>();
+    const cuts: string[][] = [];
+    layers.forEach(({ ns, entries }, depth) => {
+      for (const entry of entries()) {
+        if (hasScheme(entry.path[0])) continue;
+        const key = entry.path.join("/");
+        if (seen.has(key) || cuts.some((cut) => under(entry.path, cut)))
+          continue;
+        seen.add(key);
+        if (!entry.handle) {
+          cuts.push(entry.path);
+          continue;
+        }
+        const prev = cache.get(key);
+        const row: EntryRow =
+          prev && prev.handle === entry.handle && prev.owner === ns
+            ? prev
+            : {
+                key,
+                path: entry.path,
+                handle: entry.handle,
+                owner: ns,
+                inherited: depth > 0,
+              };
+        next.set(key, row);
+        rows.push(row);
+      }
+    });
     cache = next;
-    return out;
+    return [
+      ...rows.filter((row) => row.inherited),
+      ...rows.filter((row) => !row.inherited),
+    ];
   });
+}
+
+function under(path: string[], prefix: string[]): boolean {
+  return (
+    path.length >= prefix.length && prefix.every((name, i) => path[i] === name)
+  );
 }
 
 function tryFork(ns: Namespace): Namespace | undefined {
   try {
     return ns.fork("inspector");
   } catch {
-    return undefined; // already closed; the row is on its way out
+    return undefined; // already closed; the column is on its way out
   }
 }
 
@@ -519,6 +781,10 @@ function readValue(handle: Handle<unknown>): unknown {
   } catch {
     return undefined;
   }
+}
+
+function label(name: string): string {
+  return name.split("/").map(shorten).join("/");
 }
 
 /** `automerge:4NMNnkMh…` — a URL keeps its scheme and a few characters of
