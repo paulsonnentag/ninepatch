@@ -1,0 +1,14 @@
+{
+  "name": "@ninepatch/solid",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/index.tsx",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "dependencies": {
+    "@ninepatch/core": "workspace:*",
+    "solid-js": "^1.9.0"
+  }
+}

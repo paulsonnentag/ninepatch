@@ -1,0 +1,13 @@
+{
+  "name": "ninepatch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter demo dev",
+    "build": "pnpm --filter demo build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

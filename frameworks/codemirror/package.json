@@ -1,0 +1,16 @@
+{
+  "name": "@ninepatch/codemirror",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ninepatch/core": "workspace:*",
+    "@automerge/automerge": "^3.0.0",
+    "@codemirror/state": "^6.4.0",
+    "@codemirror/view": "^6.36.0"
+  }
+}

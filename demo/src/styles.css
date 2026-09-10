@@ -1,0 +1,304 @@
+:root {
+  color-scheme: light;
+  --ink: #1a1a1a;
+  --faint: #666;
+  --line: #ddd;
+  --accent: #6d28d9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  padding: 2rem 1rem 6rem;
+  max-width: 760px;
+  font: 16px/1.55 ui-sans-serif, system-ui, sans-serif;
+  color: var(--ink);
+}
+
+header p {
+  color: var(--faint);
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+section {
+  margin-top: 3rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+.prose {
+  color: var(--faint);
+}
+
+.prose code,
+.prose pre {
+  color: var(--ink);
+}
+
+pre {
+  background: #f6f6f6;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+details {
+  margin-top: 0.75rem;
+}
+
+details summary {
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+details pre {
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.live {
+  margin-top: 1rem;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.row > .tool {
+  flex: 1;
+}
+
+.loading {
+  color: var(--faint);
+}
+
+/* §0 folder */
+.folder {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.folder td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.25rem 0.5rem 0.25rem 0;
+}
+
+.folder code {
+  color: var(--faint);
+  word-break: break-all;
+}
+
+/* §1 chat */
+.chat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  height: 260px;
+}
+
+.chat-header {
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.9rem;
+}
+
+.chat-messages li {
+  margin-bottom: 0.25rem;
+}
+
+.chat form {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.chat input {
+  flex: 1;
+}
+
+.contacts .contact {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  color: var(--faint);
+}
+
+.contact input {
+  flex: 1;
+}
+
+/* §2 canvas + map */
+.canvas {
+  position: relative;
+  height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, #f4f4f4 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(#f4f4f4 1px, transparent 1px) 0 0 / 24px 24px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  touch-action: none;
+}
+
+.canvas .add {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  z-index: 2;
+}
+
+.card {
+  position: absolute;
+  background: #fffdf5;
+  border: 1px solid #d8d0b8;
+  border-radius: 6px;
+  padding: 0.4rem;
+  width: 160px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  user-select: none;
+}
+
+.card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.card input.title {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-weight: 600;
+}
+
+.card .coords {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+
+.card .coords input {
+  width: 3.5rem;
+  font-size: 0.75rem;
+}
+
+.card .coords button {
+  font-size: 0.7rem;
+}
+
+.map {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef6fb;
+  display: block;
+}
+
+.map .land {
+  fill: #dfe8dc;
+  stroke: #b9c8b4;
+  stroke-width: 0.4;
+  pointer-events: none;
+}
+
+.map .pin circle {
+  fill: #e11d48;
+  stroke: #fff;
+  stroke-width: 0.7;
+  cursor: pointer;
+}
+
+.map .pin .hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.map .pin text {
+  font-size: 6px;
+  text-anchor: middle;
+  fill: #333;
+  pointer-events: none;
+}
+
+.map .pin.selected circle {
+  fill: var(--accent);
+  r: 4.5;
+}
+
+/* §4 url bar + editor */
+.urlbar {
+  width: 100%;
+  font: 0.9rem ui-monospace, monospace;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #f6f6f6;
+  margin-bottom: 0.75rem;
+}
+
+.editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.editor .cm-editor {
+  height: 260px;
+}
+
+input,
+button {
+  font: inherit;
+}
+
+input {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.25rem 0.45rem;
+}
+
+button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f0f0f0;
+}

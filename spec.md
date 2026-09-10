@@ -79,7 +79,7 @@ type Namespace = {
    * is also a handle; don't, and you get a bare namespace. Rejects with
    * NotFound once the servers have answered and nothing is there. The
    * empty path throws — use fork(). */
-  open<T = never>(path: Path): Promise<[T] extends [never] ? Namespace : Namespace & Handle<T>>
+  open<T = never>(path: Path): Promise<Opened<T>>
 
   /** A new namespace at this same position with its own overlay: reads
    * fall through to this one, writes stay in the fork. */
@@ -112,12 +112,16 @@ type Namespace = {
   close(): void
 }
 
+/** What open resolves to: name a type and the namespace is also a handle. */
+type Opened<T> = [T] extends [never] ? Namespace : Namespace & Handle<T>
+
 function createNamespace(): Namespace
 
+/** What open rejects with, and what `value` throws when nothing is there. */
 class NotFound extends Error { readonly target: string[] }
 
 // Handles for things with their own behavior:
-function fromDoc<T>(doc: DocHandle<T>): Handle<T>            // value ← doc(), change ← change, on ← on/off
+function fromDoc<T>(doc: DocHandle<T>, options?: { readOnly?: boolean }): Handle<T>  // value ← doc(), change ← change, on ← on/off
 function field<T>(source: Handle<unknown>, path: string[]): Handle<T>  // a field of source, writes through source.change
 function derive<A, B>(source: Handle<A>, fn: (a: A) => B): Handle<B>
 ```
@@ -142,7 +146,8 @@ copy of the library (hot reload, two pins) still counts as one.
 At runtime there is one kind of object. Every namespace carries the brand
 and a `value` getter; a bare `Namespace` reference simply doesn't expose
 it. Naming a type on a node that has entries but no value is a programmer
-error: `value` throws.
+error: `value` throws `NotFound` — everywhere `value` has nothing to read,
+`NotFound` is what it throws, so a tool can tell "gone" from a bug.
 
 ## Paths and URLs
 
@@ -169,7 +174,9 @@ error: `value` throws.
    nothing fires `open` on every listener from the requester up through
    the namespaces it was opened or forked from, nearest first, awaits the
    handlers, re-walks, and either resolves, fires again (a link was
-   mounted and followed — a new position), or rejects.
+   mounted and followed — a new position), or rejects. Link-following is
+   bounded: a walk that crosses more than 32 links — a cycle — is an
+   error, not a hang.
 2. **Not-found rejects.** Once the handlers have settled without putting
    anything there, `open` rejects with `NotFound`. A handler that throws
    rejects the open with its error — an unavailable document fails the
@@ -183,8 +190,10 @@ error: `value` throws.
    same namespace share one request.
 5. **Answers go into `from`.** Fills are per requester overlay; sharing is
    the same handle underneath (`repo.find` caches, so two components
-   hold one `DocHandle`). A parent never sees a child's fills. A server
-   that wants documents to unload unmounts its fill on `close`.
+   hold one `DocHandle`). A parent never sees a child's fills. A fill
+   outside the requester's subtree throws — a server can only answer into
+   the namespace that asked. A server that wants documents to unload
+   unmounts its fill on `close`.
 6. **Unmount cuts, never restores.** Removing your own mount leaves the cut
    too. Requests still bubble through a cut, so a server can refill a path
    — which means a plain mount can be hidden from a child, but a URL can't
@@ -199,8 +208,8 @@ error: `value` throws.
 9. **Live.** A remount or retarget re-walks from the node, and `change`
    fires when the re-walk settles. Then `value` is whatever is there — and
    if nothing is (a link retargeted to a document the server can't serve,
-   an ancestor unmounting what you fell through to), `value` throws until
-   something is. No stale value is ever returned.
+   an ancestor unmounting what you fell through to), `value` throws
+   `NotFound` until something is. No stale value is ever returned.
 
 ## Examples
 
@@ -362,10 +371,11 @@ const { loadComponent } = (await ns.open<SolidPkg>("modules/solid")).value
 - A first name with a scheme-shaped prefix reads as a URL. In string form
   escape the colon as `\:`; in array form there is no escape — pick another
   name.
-- A held value can be lost (rule 9); `change` fires, then `value` throws.
-  Rare, and the same shape as automerge's `doc()` on a deleted document.
+- A held value can be lost (rule 9); `change` fires, then `value` throws
+  `NotFound`. Rare, and the same shape as automerge's `doc()` on a deleted
+  document.
 - Naming a type on a node that has entries but no value is a programmer
-  error the types can't catch: `value` throws.
+  error the types can't catch: `value` throws `NotFound`.
 - A URL can't be revoked from a child that knows it; cutting only hides
   plain mounts.
 - Servers must register on an ancestor of what they serve and filter by

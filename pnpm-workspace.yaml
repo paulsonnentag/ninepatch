@@ -1,0 +1,11 @@
+packages:
+  - core
+  - frameworks/*
+  - demo
+
+onlyBuiltDependencies:
+  - esbuild
+  - cbor-extract
+allowBuilds:
+  cbor-extract: set this to true or false
+  esbuild: set this to true or false

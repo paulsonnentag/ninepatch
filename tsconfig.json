@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": false,
+    "paths": {
+      "@ninepatch/core": ["./core/src/index.ts"],
+      "@ninepatch/solid": ["./frameworks/solid/src/index.tsx"],
+      "@ninepatch/codemirror": ["./frameworks/codemirror/src/index.ts"]
+    }
+  },
+  "include": ["core/src", "frameworks/solid/src", "frameworks/codemirror/src", "demo/src", "demo/vite.config.ts"]
+}

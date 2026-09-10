@@ -17,14 +17,19 @@ ninepatch/
     codemirror/         bindText — CodeMirror 6 ↔ Handle
   demo/
     index.html
-    page.tsx            the page: sections, sources, one <Mount> per live example
-    boot.ts             repo, seed documents, the origin namespace, the servers (§0)
-    tools/
-      chat.tsx
-      canvas.tsx
-      map.tsx
-      urlbar.tsx
-      markdown.tsx
+    src/
+      main.tsx          render the page
+      page.tsx          the page: sections, sources, one <Mount> per live example
+      boot.ts           repo, seed documents, the origin namespace, the servers (§0)
+      route.ts          §4 host: location ↔ hash, selectedDoc as a derived link
+      harness.tsx       <Section> = prose + live slot + the section's own source
+      types.ts          ContactDoc, ChatDoc, CanvasDoc, …
+      tools/
+        chat.tsx
+        canvas.tsx
+        map.tsx
+        urlbar.tsx
+        markdown.tsx
 ```
 
 Everything is Solid: the tools are Solid components wrapped by `tool()`,
@@ -72,7 +77,9 @@ document node. One level up, `doc` costs one `open` and sharing is free.
 
 ## frameworks/solid
 
-Five exports. The whole library is about sixty lines.
+Five exports. The whole library is about sixty lines. (Sketch — the
+shipped `frameworks/solid/src/index.tsx` is canonical; it adds a
+`NamespaceProvider` and guards reads against `NotFound`.)
 
 ```tsx
 import { createContext, useContext, createResource, createSignal, createMemo, onCleanup, type Accessor, type Resource, type JSX } from "solid-js"
@@ -443,22 +450,31 @@ Open the page in a second tab at the other document and type in both.
 6. `frameworks/codemirror/`, then §4 — first live retarget. Expect this
    section to send changes back into the spec.
 
-## Open questions the demo forces
+## Defaults taken
 
-- **CodeMirror wants a `DocHandle`.** `automergeSyncPlugin` needs heads
-  and patches; a `Handle` has `value`/`change`/`on`. Either a document
-  handle exposes its `DocHandle` (a `source` on what `fromDoc` returns, or
-  a `handle.as(DocHandle)` protocol), or `Handle` grows a patch stream.
-  The demo ships `bindText` and defers this.
-- **Starting on a miss.** A tool whose target doesn't exist when it first
-  opens gets a rejection and nothing to hold — the deferred `watch`. §4
-  sidesteps it by defaulting the route to a real document. It will come up
-  the first time a tool is mounted before its document is created.
-- **`places` by hand vs. by shape.** §2 has the host derive `places` from
-  a named document. The interesting version is a server that indexes
-  whatever the requester can reach by shape. That's a second demo page,
-  not this one.
-- **Granularity.** `createValue` is one signal per handle. Good enough for
-  the page; a Solid store fed by automerge patches is the fine-grained
-  version, and it's the same question as the CodeMirror one — who gets to
-  see patches.
+None of these block; each has a default the demo ships with, and each
+becomes a real decision only when something outside this page needs it.
+
+- **CodeMirror binds over `Handle`, not `DocHandle`.** The official
+  `automergeSyncPlugin` wants heads and patches, which a `Handle` doesn't
+  expose. The demo ships `bindText`: document → editor as a minimal
+  prefix/suffix replace (cursor survives), editor → document through
+  `updateText` (concurrent edits merge). The cost: a batch of remote edits
+  arriving in one tick collapses to one replace, which can bump a cursor
+  sitting inside the span. When that matters, the decision is one line —
+  expose the `DocHandle` from what `fromDoc` returns, or give `Handle` a
+  patch stream.
+- **The route falls back to a real document.** A tool whose target doesn't
+  exist at first open gets a rejection and nothing to hold — the deferred
+  `watch`. §4 sidesteps it by parsing garbage and empty hashes as `notes`,
+  so the first `open` always hits. Comes back the first time a tool is
+  mounted before its document is created.
+- **`places` is derived by hand.** The host names the source
+  (`demo/canvas`) and derives the list. The interesting version — a server
+  on a shape that indexes whatever the requester can reach — is a second
+  demo page, not this one.
+- **One signal per handle.** `createValue` re-reads the whole value on
+  every change. Solid's `<For>` keys by reference and automerge keeps the
+  identity of untouched objects, so lists don't re-render wholesale. The
+  fine-grained version is a Solid store fed by automerge patches — the
+  same decision as the CodeMirror one: who gets to see patches.
