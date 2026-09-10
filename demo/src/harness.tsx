@@ -246,7 +246,26 @@ function Node(props: {
   const transparent = () =>
     props.depth > 0 ? own().length === 0 : rows().length === 0;
   const [folded, setFolded] = createSignal(false);
+  const [height, setHeight] = createSignal(250);
   let el!: HTMLDivElement;
+
+  /** Drag the bottom edge: the window gets taller or shorter, never
+   * shorter than its title bar and a few rows. */
+  const resize = (e: PointerEvent) => {
+    e.preventDefault();
+    const start = e.clientY;
+    const before = height();
+    const move = (ev: PointerEvent) =>
+      setHeight(Math.max(96, before + ev.clientY - start));
+    const stop = () => {
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", stop);
+      document.body.classList.remove("resizing");
+    };
+    document.body.classList.add("resizing");
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", stop);
+  };
 
   const isSelected = (row: EntryRow) =>
     props.selected?.dir === self && props.selected.row.key === row.key;
@@ -300,6 +319,7 @@ function Node(props: {
         <div
           class="window"
           classList={{ open: mine() !== undefined, folded: folded() }}
+          style={{ "--height": `${height()}px` }}
           ref={el}
         >
           <div class="titlebar" title={self.name}>
@@ -355,6 +375,7 @@ function Node(props: {
                 )}
               </Show>
             </div>
+            <div class="window-grip" onPointerDown={resize} />
           </Show>
         </div>
         <div class="folder-children">{below()}</div>
@@ -395,7 +416,9 @@ function Preview(props: {
           </svg>
         </button>
       </div>
-      <Value handle={row.handle} path={row.path} probe={probe} editor />
+      <div class="preview-body">
+        <Value handle={row.handle} path={row.path} probe={probe} editor />
+      </div>
     </div>
   );
 }

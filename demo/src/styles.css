@@ -272,9 +272,10 @@ body.dragging {
 }
 
 .window {
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 250px;
+  height: var(--height, 250px);
   border: 1px solid #d0d0d0;
   border-radius: 10px;
   background: white;
@@ -300,6 +301,32 @@ body.dragging {
 
 .window.folded {
   height: auto;
+}
+
+/* drag the bottom edge to make a window taller */
+.window-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+
+.window-grip:hover,
+body.resizing .window-grip {
+  background: linear-gradient(
+    transparent 3px,
+    var(--accent) 3px,
+    var(--accent) 4px,
+    transparent 4px
+  );
+}
+
+body.resizing {
+  cursor: ns-resize;
+  user-select: none;
 }
 
 .window.folded .titlebar {
@@ -407,7 +434,9 @@ body.dragging {
 }
 
 .tree-item.selected,
-.tree-item.inherited.selected {
+.tree-item.selected:hover,
+.tree-item.inherited.selected,
+.tree-item.inherited.selected:hover {
   background: var(--selection);
   color: white;
 }
@@ -481,18 +510,27 @@ body.dragging {
 .preview {
   flex: 1;
   min-width: 0;
-  overflow: auto;
-  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #fafafa;
 }
 
+/* the head stays put; only the body scrolls */
 .preview-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding-bottom: 0.4rem;
-  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.75rem 0.4rem;
   border-bottom: 1px solid var(--line);
+}
+
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.4rem 0.75rem 0.5rem;
 }
 
 .preview-path {
