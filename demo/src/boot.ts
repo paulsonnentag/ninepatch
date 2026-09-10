@@ -9,6 +9,7 @@ import type {
   Folder,
   MarkdownDoc,
   Seed,
+  TodoDoc,
 } from "./types";
 
 export const repo = new Repo({
@@ -95,9 +96,17 @@ async function findOrCreateSeed(): Promise<Seed> {
     url = folder.url;
   }
   const folder = await repo.find<Folder>(url as AnyDocumentId);
+  if (!folder.doc().todos) {
+    // seeded before the todos section existed
+    const todos = repo.create<TodoDoc>({
+      items: [{ text: "open this page in a second tab", done: false }],
+    });
+    folder.change((d) => (d.todos = todos.url));
+  }
   const docs = folder.doc();
   return {
     url,
+    todos: docs.todos,
     chat: docs.chat,
     canvas: docs.canvas,
     notes: docs.notes,

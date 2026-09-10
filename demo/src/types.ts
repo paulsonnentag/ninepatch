@@ -1,3 +1,4 @@
+export type TodoDoc = { items: { text: string; done: boolean }[] };
 export type ContactDoc = { name: string; color: string };
 export type ChatDoc = {
   messages: { author: string; color: string; text: string; at: number }[];
@@ -17,6 +18,7 @@ export type Folder = Record<string, string>;
 
 export type Seed = {
   url: string;
+  todos: string;
   chat: string;
   canvas: string;
   notes: string;

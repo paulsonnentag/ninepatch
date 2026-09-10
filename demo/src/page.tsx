@@ -1,4 +1,4 @@
-/** The page: three sections, each a sentence, a live example, the code
+/** The page: four sections, each a sentence, a live example, the code
  * behind it, and the directories it runs in. Every section gets its own
  * named fork of the page's directory, and everything that runs — the
  * tools, the host's own derivations — is a process spawned there, so the
@@ -8,6 +8,7 @@
 import { frame, moduleUrl, seed } from "./boot";
 import { Mount, Section } from "./harness";
 import type { Route } from "./types";
+import todosSource from "./tools/todos.tsx?raw";
 import chatSource from "./tools/chat.tsx?raw";
 import canvasSource from "./tools/canvas.tsx?raw";
 import mapSource from "./tools/map.tsx?raw";
@@ -17,6 +18,8 @@ import urlbarSource from "./tools/urlbar.tsx?raw";
 import markdownSource from "./tools/markdown.tsx?raw";
 
 // --- host: one fork per section, and what runs there before rendering --------
+
+const todos = frame.fork("todos");
 
 const chat = frame.fork("chat");
 
@@ -43,6 +46,25 @@ export function Page() {
           everything syncs.
         </p>
       </header>
+
+      <Section
+        title="Todos"
+        chain={[frame, todos]}
+        sources={[{ name: "todos.tsx", code: todosSource }]}
+        prose={
+          <p>
+            The smallest case: one directory holding one document, a todo tool
+            spawned in it, and ticking a box in a second tab ticks it here too.
+          </p>
+        }
+      >
+        <Mount
+          dir={todos}
+          name="Todos"
+          url={moduleUrl("todos.tsx")}
+          mount={{ doc: seed.todos }}
+        />
+      </Section>
 
       <Section
         title="Chat"

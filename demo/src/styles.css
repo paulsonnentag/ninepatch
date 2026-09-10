@@ -889,6 +889,49 @@ body.resizing {
   color: var(--faint);
 }
 
+/* todos */
+.todos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 320px;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.todo-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.todo-items label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.todo-items li.done span {
+  text-decoration: line-through;
+  color: var(--faint);
+}
+
+.todos form {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.todos form input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* chat */
 .chat {
   border: 1px solid var(--line);
