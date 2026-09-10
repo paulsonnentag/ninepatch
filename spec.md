@@ -207,11 +207,11 @@ type Main = (dir: Directory) => Promise<void> | void
 type Process = {
   readonly pid: string                        // a UUID
   readonly name: string
-  readonly url: string                        // the module — /proc/n/text
+  readonly url: string                        // the module spawn imported, e.g. "http://…/src/tools/chat.tsx"
   readonly at: Directory                      // where it was spawned; nothing else leads there
   /** What the default export received: the entries of `at`, an empty
-   * path, and its own lifetime. `children` is what it opened —
-   * /proc/n/fd. `close()` kills; `signal` aborts then. */
+   * path, and its own lifetime. `children` is what it opened. `close()`
+   * kills; `signal` aborts then. */
   readonly dir: Directory
   /** The default export's return. A failed import or a throw rejects it
    * and kills. */
