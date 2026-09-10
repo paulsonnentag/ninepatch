@@ -225,12 +225,22 @@ type Registry = Map<Directory, () => void>;
 
 /** The directories of a section: one window per directory, hung in their
  * hierarchy, with the processes running at each one as nodes beside its
- * window. Selecting an entry opens a preview inside its window. */
+ * window. Selecting an entry opens a preview inside its window — each
+ * window keeps a selection of its own. */
 function Windows(props: {
   chain: Directory[];
   onFocusProcess?: (p: Process) => void;
 }) {
-  const [selected, setSelected] = createSignal<Selection>();
+  const [selections, setSelections] = createSignal<Map<Directory, Selection>>(
+    new Map()
+  );
+  const select = (dir: Directory, sel: Selection | undefined) =>
+    setSelections((prev) => {
+      const next = new Map(prev);
+      if (sel) next.set(dir, sel);
+      else next.delete(dir);
+      return next;
+    });
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
   mountHighlight();
@@ -240,8 +250,8 @@ function Windows(props: {
       <Node
         chain={props.chain}
         depth={0}
-        selected={selected()}
-        onSelect={setSelected}
+        selections={selections}
+        select={select}
         registry={registry}
         processes={table}
         onFocusProcess={props.onFocusProcess}
@@ -263,8 +273,8 @@ function Windows(props: {
 function Node(props: {
   chain: Directory[];
   depth: number;
-  selected: Selection | undefined;
-  onSelect: (sel: Selection | undefined) => void;
+  selections: Accessor<Map<Directory, Selection>>;
+  select: (dir: Directory, sel: Selection | undefined) => void;
   registry: Registry;
   processes: Accessor<Process[]>;
   onFocusProcess?: (p: Process) => void;
@@ -305,17 +315,16 @@ function Node(props: {
     addEventListener("pointerup", stop);
   };
 
-  const isSelected = (row: EntryRow) =>
-    props.selected?.dir === self && props.selected.row.key === row.key;
-  /** This row is where a selection somewhere below was inherited from. */
+  /** This window's own selection — every window keeps one. */
+  const mine = () => props.selections().get(self);
+  const isSelected = (row: EntryRow) => mine()?.row.key === row.key;
+  /** This row is where a selection in some window below was inherited
+   * from. */
   const isOrigin = (row: EntryRow) =>
-    props.selected !== undefined &&
-    props.selected.dir !== self &&
-    props.selected.row.owner === self &&
-    props.selected.row.key === row.key;
-  /** The selection, if it is in this window. */
-  const mine = () =>
-    props.selected?.dir === self ? props.selected : undefined;
+    [...props.selections().values()].some(
+      (sel) =>
+        sel.dir !== self && sel.row.owner === self && sel.row.key === row.key
+    );
 
   props.registry.set(self, () => {
     setFolded(false);
@@ -326,16 +335,13 @@ function Node(props: {
   // a selection that no longer exists — the entry went, or this directory
   // closed — is dropped
   createEffect(() => {
-    const sel = props.selected;
-    if (sel?.dir === self) {
-      const row = rows().find((r) => r.key === sel.row.key);
-      if (!row) props.onSelect(undefined);
-      else if (row !== sel.row) props.onSelect({ ...sel, row });
-    }
+    const sel = mine();
+    if (!sel) return;
+    const row = rows().find((r) => r.key === sel.row.key);
+    if (!row) props.select(self, undefined);
+    else if (row !== sel.row) props.select(self, { ...sel, row });
   });
-  onCleanup(() => {
-    if (props.selected?.dir === self) props.onSelect(undefined);
-  });
+  onCleanup(() => props.select(self, undefined));
 
   const below = () => (
     <For each={children()}>
@@ -343,8 +349,8 @@ function Node(props: {
         <Node
           chain={[...props.chain, child]}
           depth={transparent() ? props.depth : props.depth + 1}
-          selected={props.selected}
-          onSelect={props.onSelect}
+          selections={props.selections}
+          select={props.select}
           registry={props.registry}
           processes={props.processes}
           onFocusProcess={props.onFocusProcess}
@@ -393,7 +399,7 @@ function Node(props: {
                             : `mounted here`
                         }
                         onClick={() =>
-                          props.onSelect({ row, dir: self, probe })
+                          props.select(self, { row, dir: self, probe })
                         }
                       >
                         <FileIcon />
@@ -414,7 +420,7 @@ function Node(props: {
                     <Preview
                       selection={sel}
                       reveal={(dir) => props.registry.get(dir)?.()}
-                      close={() => props.onSelect(undefined)}
+                      close={() => props.select(self, undefined)}
                     />
                   )}
                 </Show>
