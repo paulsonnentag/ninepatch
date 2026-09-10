@@ -5,7 +5,7 @@ import type { Directory } from "@ninepatch/core";
 import { bindText } from "@ninepatch/codemirror";
 import type { MarkdownDoc } from "../types";
 
-export async function Markdown(dir: Directory) {
+export default async function Markdown(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<MarkdownDoc>("selectedDoc"); // follows the link, and keeps following
 

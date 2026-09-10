@@ -1,7 +1,8 @@
 /** The page furniture: the host side of a tool (`Mount`), and a section —
  * prose plus three panels: the live example, the code behind it in tabs,
  * and the directories it runs in, drawn as a file window: the hierarchy
- * of directories as windows with their entries as files, and a preview of
+ * of directories as windows with their entries as files, the processes
+ * running at each one as nodes beside its window, and a preview of
  * whatever is selected. Handles feed Solid through
  * `from()`: a handle is a store. */
 
@@ -18,23 +19,28 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js";
-import { hasScheme, type Handle, type Directory } from "@ninepatch/core";
+import {
+  hasScheme,
+  type Handle,
+  type Directory,
+  type Process,
+} from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { render } from "solid-js/web";
 import { RawEditor } from "./raw-editor";
-import type { Tool } from "./types";
+import { processes } from "./boot";
 
 export type Source = { name: string; code: string };
 
 /** The host side of a tool, spelled out: fork the section's directory
  * under `name`, mount what the tool should see plus this element as
- * `dom`, run it, close on cleanup. A tool that rejects — an entry it
- * needed isn't there — says so in its slot. */
+ * `dom`, spawn the module, close on cleanup. A tool that rejects — an
+ * entry it needed isn't there — says so in its slot. */
 export function Mount(props: {
   dir: Directory;
   name: string;
-  tool: Tool;
+  url: string;
   mount?: Record<string, unknown>;
   unmount?: string[];
 }) {
@@ -44,7 +50,15 @@ export function Mount(props: {
     dir.mount(path, what);
   for (const path of props.unmount ?? []) dir.unmount(path);
   dir.mount("dom", el);
-  props.tool(dir).catch((e: unknown) => {
+  const tool = props.url
+    .split("/")
+    .pop()!
+    .replace(/\.tsx?$/, "");
+  const process = dir.spawn(
+    tool[0].toUpperCase() + tool.slice(1), // chat.tsx runs as "Chat"
+    props.url
+  );
+  process.terminated.catch((e: unknown) => {
     if (!dir.signal.aborted) el.textContent = String(e);
   });
   onCleanup(() => dir.close());
@@ -64,7 +78,15 @@ export function Section(props: {
   children: JSX.Element;
 }) {
   const [widths, setWidths] = createSignal([1, 1, 1]);
+  const [tab, setTab] = createSignal(0);
   let band!: HTMLDivElement;
+
+  /** A process node was clicked: show its source. */
+  const showSource = (p: Process) => {
+    const name = p.url.split("/").pop();
+    const index = props.sources.findIndex((s) => s.name === name);
+    if (index >= 0) setTab(index);
+  };
 
   /** Drag a divider: move width between its two neighbours, in fractions
    * of the band, so the layout survives a window resize. */
@@ -117,14 +139,14 @@ export function Section(props: {
         <div class="panel context">
           <h3>data</h3>
           <div class="panel-body">
-            <Windows chain={props.chain} />
+            <Windows chain={props.chain} onFocusProcess={showSource} />
           </div>
         </div>
         <div class="divider" onPointerDown={[drag, 1]} />
         <div class="panel code">
           <h3>code</h3>
           <div class="panel-body">
-            <Tabs sources={props.sources} />
+            <Tabs sources={props.sources} active={tab()} onSelect={setTab} />
           </div>
         </div>
       </div>
@@ -132,8 +154,11 @@ export function Section(props: {
   );
 }
 
-function Tabs(props: { sources: Source[] }) {
-  const [active, setActive] = createSignal(0);
+function Tabs(props: {
+  sources: Source[];
+  active: number;
+  onSelect: (index: number) => void;
+}) {
   return (
     <>
       <div class="tabs" role="tablist">
@@ -142,8 +167,8 @@ function Tabs(props: { sources: Source[] }) {
             <button
               role="tab"
               class="tab"
-              classList={{ active: active() === i() }}
-              onClick={() => setActive(i())}
+              classList={{ active: props.active === i() }}
+              onClick={() => props.onSelect(i())}
             >
               {source.name}
             </button>
@@ -151,7 +176,7 @@ function Tabs(props: { sources: Source[] }) {
         </For>
       </div>
       <pre class="source">
-        <code>{highlight(props.sources[active()]?.code ?? "")}</code>
+        <code>{highlight(props.sources[props.active]?.code ?? "")}</code>
       </pre>
     </>
   );
@@ -199,11 +224,17 @@ type Selection = {
 type Registry = Map<Directory, () => void>;
 
 /** The directories of a section: one window per directory, hung in their
- * hierarchy. Selecting an entry opens a preview inside its window. */
-function Windows(props: { chain: Directory[] }) {
+ * hierarchy, with the processes running at each one as nodes beside its
+ * window. Selecting an entry opens a preview inside its window. */
+function Windows(props: {
+  chain: Directory[];
+  onFocusProcess?: (p: Process) => void;
+}) {
   const [selected, setSelected] = createSignal<Selection>();
   const registry: Registry = new Map();
+  const table = from(processes, processes.value);
   mountHighlight();
+  mountProcLines();
   return (
     <div class="windows" role="tree">
       <Node
@@ -212,6 +243,8 @@ function Windows(props: { chain: Directory[] }) {
         selected={selected()}
         onSelect={setSelected}
         registry={registry}
+        processes={table}
+        onFocusProcess={props.onFocusProcess}
       />
     </div>
   );
@@ -233,6 +266,8 @@ function Node(props: {
   selected: Selection | undefined;
   onSelect: (sel: Selection | undefined) => void;
   registry: Registry;
+  processes: Accessor<Process[]>;
+  onFocusProcess?: (p: Process) => void;
 }) {
   const self = props.chain[props.chain.length - 1];
   const probe = tryFork(self);
@@ -241,10 +276,13 @@ function Node(props: {
   const own = () => rows().filter((row) => !row.inherited);
   const kids = from(self.children, self.children.value);
   const children = () => kids().filter((c) => c !== probe);
-  /** Nothing to show: below the top, a directory that mounted nothing;
-   * at the top, one with nothing to list at all. */
+  /** What runs here — drawn beside the window, never inside it. */
+  const procs = () => props.processes().filter((p) => p.at === self);
+  /** Nothing to show: below the top, a directory that mounted nothing and
+   * runs nothing; at the top, one with nothing to list at all. */
   const transparent = () =>
-    props.depth > 0 ? own().length === 0 : rows().length === 0;
+    procs().length === 0 &&
+    (props.depth > 0 ? own().length === 0 : rows().length === 0);
   const [folded, setFolded] = createSignal(false);
   const [height, setHeight] = createSignal(250);
   let el!: HTMLDivElement;
@@ -308,6 +346,8 @@ function Node(props: {
           selected={props.selected}
           onSelect={props.onSelect}
           registry={props.registry}
+          processes={props.processes}
+          onFocusProcess={props.onFocusProcess}
         />
       )}
     </For>
@@ -316,71 +356,213 @@ function Node(props: {
   return (
     <Show when={!transparent()} fallback={below()}>
       <div class="folder-node">
-        <div
-          class="window"
-          classList={{ open: mine() !== undefined, folded: folded() }}
-          style={{ "--height": `${height()}px` }}
-          ref={el}
-        >
-          <div class="titlebar" title={self.name}>
-            <span class="window-title">{label(self.name)}</span>
-            <button
-              class="fold"
-              title={folded() ? "expand" : "minimize"}
-              aria-expanded={!folded()}
-              onClick={() => setFolded(!folded())}
-            >
-              <FoldIcon folded={folded()} />
-            </button>
-          </div>
-          <Show when={!folded()}>
-            <div class="window-body">
-              <div class="entries">
-                <For each={rows()}>
-                  {(row) => (
-                    <div
-                      class="tree-item"
-                      classList={{
-                        selected: isSelected(row),
-                        origin: isOrigin(row),
-                        inherited: row.inherited,
-                      }}
-                      title={
-                        row.inherited
-                          ? `from ${row.owner.name}`
-                          : `mounted here`
-                      }
-                      onClick={() => props.onSelect({ row, dir: self, probe })}
-                    >
-                      <FileIcon />
-                      <span class="tree-name">{row.path.join("/")}</span>
-                      <span class="tree-value">
-                        <Value
-                          handle={row.handle}
-                          path={row.path}
-                          probe={probe}
-                        />
-                      </span>
-                    </div>
-                  )}
-                </For>
-              </div>
-              <Show when={mine()} keyed>
-                {(sel) => (
-                  <Preview
-                    selection={sel}
-                    reveal={(dir) => props.registry.get(dir)?.()}
-                    close={() => props.onSelect(undefined)}
-                  />
-                )}
-              </Show>
+        <div class="window-row">
+          <div
+            class="window"
+            classList={{ open: mine() !== undefined, folded: folded() }}
+            style={{ "--height": `${height()}px` }}
+            ref={el}
+          >
+            <div class="titlebar" title={self.name}>
+              <span class="window-title">{label(self.name)}</span>
+              <button
+                class="fold"
+                title={folded() ? "expand" : "minimize"}
+                aria-expanded={!folded()}
+                onClick={() => setFolded(!folded())}
+              >
+                <FoldIcon folded={folded()} />
+              </button>
             </div>
-            <div class="window-grip" onPointerDown={resize} />
+            <Show when={!folded()}>
+              <div class="window-body">
+                <div class="entries">
+                  <For each={rows()}>
+                    {(row) => (
+                      <div
+                        class="tree-item"
+                        data-path={row.key}
+                        classList={{
+                          selected: isSelected(row),
+                          origin: isOrigin(row),
+                          inherited: row.inherited,
+                        }}
+                        title={
+                          row.inherited
+                            ? `from ${row.owner.name}`
+                            : `mounted here`
+                        }
+                        onClick={() =>
+                          props.onSelect({ row, dir: self, probe })
+                        }
+                      >
+                        <FileIcon />
+                        <span class="tree-name">{row.path.join("/")}</span>
+                        <span class="tree-value">
+                          <Value
+                            handle={row.handle}
+                            path={row.path}
+                            probe={probe}
+                          />
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                <Show when={mine()} keyed>
+                  {(sel) => (
+                    <Preview
+                      selection={sel}
+                      reveal={(dir) => props.registry.get(dir)?.()}
+                      close={() => props.onSelect(undefined)}
+                    />
+                  )}
+                </Show>
+              </div>
+              <div class="window-grip" onPointerDown={resize} />
+            </Show>
+          </div>
+          <Show when={procs().length > 0}>
+            <div class="procs">
+              <For each={procs()}>
+                {(p) => <ProcNode process={p} onFocus={props.onFocusProcess} />}
+              </For>
+            </div>
           </Show>
         </div>
         <div class="folder-children">{below()}</div>
       </div>
     </Show>
+  );
+}
+
+// --- processes ------------------------------------------------------------
+
+/** Which process's lines are drawn: the hovered one, or the clicked one. */
+const [hoveredProc, setHoveredProc] = createSignal<Process>();
+const [pinnedProc, setPinnedProc] = createSignal<Process>();
+const focusedProc = () => hoveredProc() ?? pinnedProc();
+
+/** A process, beside the window of the directory it runs in. Hover or
+ * click and lines run to the entries it has open; click also shows its
+ * source in the code panel; the small × kills it. */
+function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
+  const p = props.process;
+  onCleanup(() => {
+    if (pinnedProc() === p) setPinnedProc(undefined);
+    if (hoveredProc() === p) setHoveredProc(undefined);
+  });
+  return (
+    <button
+      class="proc"
+      classList={{ focused: focusedProc() === p }}
+      data-pid={p.pid}
+      title={p.url}
+      onMouseEnter={() => setHoveredProc(p)}
+      onMouseLeave={() => setHoveredProc((h) => (h === p ? undefined : h))}
+      onClick={() => {
+        setPinnedProc(pinnedProc() === p ? undefined : p);
+        props.onFocus?.(p);
+      }}
+    >
+      <span class="proc-name">{p.name}</span>
+      <span
+        class="proc-kill"
+        title="kill"
+        onClick={(e) => {
+          e.stopPropagation();
+          p.dir.close();
+        }}
+      >
+        ×
+      </span>
+    </button>
+  );
+}
+
+let procLinesMounted = false;
+
+function mountProcLines() {
+  if (procLinesMounted) return;
+  procLinesMounted = true;
+  render(() => <ProcLines />, document.body);
+}
+
+/** One overlay for the whole page: lines from the focused process's node
+ * to the rows it has open in its window, redrawn on scroll, resize, and
+ * whenever what it opened changes; rows scrolled out of the window are
+ * skipped. */
+function ProcLines() {
+  const [bump, setBump] = createSignal(0, { equals: false });
+  const redraw = () => setBump(0);
+  document.addEventListener("scroll", redraw, { capture: true, passive: true });
+  addEventListener("resize", redraw);
+  onCleanup(() => {
+    document.removeEventListener("scroll", redraw, { capture: true });
+    removeEventListener("resize", redraw);
+  });
+
+  /** What the focused process has open, live. */
+  const [opened, setOpened] = createSignal<string[]>([]);
+  createEffect(() => {
+    const p = focusedProc();
+    if (!p) return setOpened([]);
+    const unsub = p.dir.children.subscribe((kids) =>
+      setOpened(kids.map((c) => c.name))
+    );
+    onCleanup(unsub);
+  });
+
+  /** The focused window changes size — fold, drag — without scrolling. */
+  createEffect(() => {
+    const p = focusedProc();
+    if (!p) return;
+    const chip = document.querySelector(`[data-pid="${p.pid}"]`);
+    const win = chip?.closest(".window-row")?.querySelector(".window");
+    if (!win) return;
+    const observer = new ResizeObserver(redraw);
+    observer.observe(win);
+    onCleanup(() => observer.disconnect());
+  });
+
+  const lines = createMemo(() => {
+    bump();
+    const p = focusedProc();
+    if (!p) return [];
+    const chip = document.querySelector(`[data-pid="${p.pid}"]`);
+    const body = chip
+      ?.closest(".window-row")
+      ?.querySelector(".window .window-body");
+    if (!chip || !body) return [];
+    const c = chip.getBoundingClientRect();
+    const b = body.getBoundingClientRect();
+    const out: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const name of opened()) {
+      const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
+      if (!item) continue;
+      const r = item.getBoundingClientRect();
+      if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
+      out.push({
+        x1: c.left,
+        y1: c.top + c.height / 2,
+        x2: r.right - 6,
+        y2: r.top + r.height / 2,
+      });
+    }
+    return out;
+  });
+
+  return (
+    <svg class="proc-lines" aria-hidden="true">
+      <For each={lines()}>
+        {(l) => (
+          <>
+            <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
+            <circle cx={l.x2} cy={l.y2} r="2.5" />
+          </>
+        )}
+      </For>
+    </svg>
   );
 }
 

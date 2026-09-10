@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import type { Handle, Directory } from "@ninepatch/core";
 import type { CanvasDoc } from "../types";
 
-export async function Canvas(dir: Directory) {
+export default async function Canvas(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<CanvasDoc>("doc");
   const selection = await dir.open<string | null>("selection");

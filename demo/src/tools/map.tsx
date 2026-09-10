@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
 import type { Place } from "../types";
 
-export async function MapView(dir: Directory) {
+export default async function MapView(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const places = await dir.open<Place[]>("places");
   const selection = await dir.open<string | null>("selection");

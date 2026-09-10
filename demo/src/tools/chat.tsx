@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
 import type { ChatDoc, ContactDoc } from "../types";
 
-export async function Chat(dir: Directory) {
+export default async function Chat(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<ChatDoc>("doc");
   const user = await dir.open<ContactDoc>("user");

@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
 import type { Folder, Route } from "../types";
 
-export async function UrlBar(dir: Directory) {
+export default async function UrlBar(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const location = await dir.open<Route>("location");
   const demo = await dir.open<Folder>("demo");

@@ -319,6 +319,97 @@ body.resizing {
   user-select: none;
 }
 
+/* processes: modules running at a directory, as nodes beside its window */
+.window-row {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.window-row > .window {
+  flex: 1;
+  min-width: 0;
+}
+
+.procs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding-top: 0.35rem; /* level with the title bar */
+  flex: none;
+}
+
+.proc {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 1.1rem; /* room for the connector */
+  padding: 0.15rem 0.55rem;
+  font: inherit;
+  font-size: 0.7rem;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* the connector to the window */
+.proc::before {
+  content: "";
+  position: absolute;
+  left: -1.1rem;
+  top: 50%;
+  width: 1.1rem;
+  height: 1px;
+  background: #c8c8cc;
+}
+
+.proc.focused {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.proc-kill {
+  display: none;
+  margin-right: -0.2rem;
+  padding: 0 0.15rem;
+  color: #909096;
+  line-height: 1;
+}
+
+.proc:hover .proc-kill,
+.proc.focused .proc-kill {
+  display: inline;
+}
+
+.proc-kill:hover {
+  color: #d33;
+}
+
+/* one overlay for the whole page: lines from the focused process to the
+   entries it has open */
+.proc-lines {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.proc-lines line {
+  stroke: var(--accent);
+  stroke-width: 1.2;
+}
+
+.proc-lines circle {
+  fill: var(--accent);
+}
+
 .window.folded .titlebar {
   border-bottom: none;
 }

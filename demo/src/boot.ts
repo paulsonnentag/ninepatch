@@ -1,7 +1,7 @@
 import { Repo, type AnyDocumentId } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
-import { createDirectory, field, fromDoc } from "@ninepatch/core";
+import { createDirectory, field, fromDoc, type Main } from "@ninepatch/core";
 import type {
   CanvasDoc,
   ChatDoc,
@@ -18,12 +18,30 @@ export const repo = new Repo({
 
 export const seed = await findOrCreateSeed();
 
-export const dir = createDirectory();
+// The tools, each its own module — spawn takes the URL, the root's
+// importer resolves it, and Vite serves every tool as its own chunk.
+const modules = import.meta.glob<{ default: Main }>("./tools/*.{ts,tsx}");
+
+/** The URL a tool is spawned by. */
+export function moduleUrl(name: string): string {
+  return `./tools/${name}`;
+}
+
+const root = createDirectory({
+  import: (url) =>
+    (modules[url] ?? (() => import(/* @vite-ignore */ url)))() as Promise<{
+      default: Main;
+    }>,
+});
+
+/** The process table — the root's alone. The page keeps the root here and
+ * hands out `frame`; only the harness's data panel reads this. */
+export const processes = root.processes;
 
 // The repo, as a server — verbatim from the spec. Filters by protocol,
 // walks into documents itself, mounts every asked-for field as a live
 // handle. Nothing in the directory knows what a document is.
-dir.serve({
+root.serve({
   async open(target, from) {
     const [url, ...fields] = target;
     if (!url.startsWith("automerge:")) return;
@@ -39,9 +57,9 @@ dir.serve({
   },
 });
 
-dir.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
+root.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
 
-export const frame = dir.fork("page"); // the page renders under this
+export const frame = root.fork("page"); // the page renders under this
 
 async function findOrCreateSeed(): Promise<Seed> {
   const KEY = "ninepatch:demo:folder";

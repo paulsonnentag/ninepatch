@@ -1,47 +1,32 @@
 /** The page: three sections, each a sentence, a live example, the code
  * behind it, and the directories it runs in. Every section gets its own
- * named fork of the page's directory, so the data panel shows exactly
- * that section's world. The host work, fork, mount, hand the directory to
- * a tool, happens right here, and the directory is always passed by hand:
- * nothing is provided through context. */
+ * named fork of the page's directory, and everything that runs — the
+ * tools, the host's own derivations — is a process spawned there, so the
+ * data panel shows exactly that section's world: windows for directories,
+ * nodes beside them for what runs in them. */
 
-import { derive } from "@ninepatch/core";
-import { frame, seed } from "./boot";
-import { setupRoute } from "./route";
+import { frame, moduleUrl, seed } from "./boot";
 import { Mount, Section } from "./harness";
-import { Chat } from "./tools/chat";
-import { Canvas } from "./tools/canvas";
-import { MapView } from "./tools/map";
-import { UrlBar } from "./tools/urlbar";
-import { Markdown } from "./tools/markdown";
-import type { CanvasDoc } from "./types";
+import type { Route } from "./types";
 import chatSource from "./tools/chat.tsx?raw";
 import canvasSource from "./tools/canvas.tsx?raw";
 import mapSource from "./tools/map.tsx?raw";
-import routeSource from "./route.ts?raw";
+import placesSource from "./tools/places.ts?raw";
+import routeSource from "./tools/route.ts?raw";
 import urlbarSource from "./tools/urlbar.tsx?raw";
 import markdownSource from "./tools/markdown.tsx?raw";
 
-// --- host: one fork per section, and what each mounts before rendering -------
+// --- host: one fork per section, and what runs there before rendering --------
 
 const chat = frame.fork("chat");
 
 const places = frame.fork("places");
 places.mount("selection", null as string | null); // a plain value; never touches a document
-const canvas = await places.open<CanvasDoc>("demo/canvas"); // through the folder's link
-places.mount(
-  "places",
-  derive(canvas, (d) =>
-    Object.entries(d.cards).flatMap(([id, card]) =>
-      card.lat != null && card.lng != null
-        ? [{ id, title: card.title, lat: card.lat, lng: card.lng }]
-        : []
-    )
-  )
-);
+await places.spawn("Places", moduleUrl("places.ts")).terminated; // mounts `places`, derived from the canvas
 
 const url = frame.fork("url");
-const location = await setupRoute(url, seed); // remembered in local storage; selectedDoc derived from it
+await url.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `location` and `selectedDoc`
+const location = await url.open<Route>("location"); // for the buttons below
 
 // --- the page -----------------------------------------------------------------
 
@@ -52,9 +37,10 @@ export function Page() {
         <h1>ninepatch</h1>
         <p>
           Plan 9's namespace, in the browser, over automerge: a <b>directory</b>{" "}
-          is a position you navigate, mount into, and listen on, and a{" "}
-          <b>handle</b> is a live grip on a value. Open this page in a second
-          tab and everything syncs.
+          is a collection of named things you mount into and listen on, a{" "}
+          <b>handle</b> is a live grip on a value, and a <b>process</b> is a
+          module running in a directory. Open this page in a second tab and
+          everything syncs.
         </p>
       </header>
 
@@ -74,13 +60,13 @@ export function Page() {
           <Mount
             dir={chat}
             name="Alice"
-            tool={Chat}
+            url={moduleUrl("chat.tsx")}
             mount={{ doc: seed.chat, user: seed.alice }}
           />
           <Mount
             dir={chat}
             name="Bob"
-            tool={Chat}
+            url={moduleUrl("chat.tsx")}
             mount={{ doc: seed.chat, user: seed.bob }}
           />
         </div>
@@ -92,23 +78,24 @@ export function Page() {
         sources={[
           { name: "canvas.tsx", code: canvasSource },
           { name: "map.tsx", code: mapSource },
+          { name: "places.ts", code: placesSource },
         ]}
         prose={
           <p>
-            The canvas edits a document of cards, the host derives{" "}
-            <code>places</code> from it, and the map draws a pin per place and
-            shares a <code>selection</code> entry with the canvas, so clicking
-            on either side highlights the other.
+            The canvas edits a document of cards, a <code>Places</code> process
+            derives <code>places</code> from it, and the map draws a pin per
+            place and shares a <code>selection</code> entry with the canvas, so
+            clicking on either side highlights the other.
           </p>
         }
       >
         <Mount
           dir={places}
           name="Canvas"
-          tool={Canvas}
+          url={moduleUrl("canvas.tsx")}
           mount={{ doc: seed.canvas }}
         />
-        <Mount dir={places} name="Map" tool={MapView} />
+        <Mount dir={places} name="Map" url={moduleUrl("map.tsx")} />
       </Section>
 
       <Section
@@ -121,10 +108,10 @@ export function Page() {
         ]}
         prose={
           <p>
-            The route lives in the directory as <code>location</code>,
-            remembered in local storage, and <code>selectedDoc</code> is a link
-            derived from it that the editor follows wherever the buttons or the
-            bar point it.
+            A <code>Route</code> process keeps the route in the directory as{" "}
+            <code>location</code>, remembered in local storage, and{" "}
+            <code>selectedDoc</code> is a link derived from it that the editor
+            follows wherever the buttons or the bar point it.
           </p>
         }
       >
@@ -136,8 +123,8 @@ export function Page() {
             notes2
           </button>
         </div>
-        <Mount dir={url} name="UrlBar" tool={UrlBar} />
-        <Mount dir={url} name="Markdown" tool={Markdown} />
+        <Mount dir={url} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
+        <Mount dir={url} name="Markdown" url={moduleUrl("markdown.tsx")} />
       </Section>
     </>
   );
