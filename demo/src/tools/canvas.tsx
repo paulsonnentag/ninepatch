@@ -1,9 +1,3 @@
-/** §2/§3. Cards on a canvas; some carry a location. Drag to move, click to
- * select; the selected card shows title/lat/lng inputs. Selection is the
- * shared `selection` entry — the map holds the same handle. The tool is
- * the four lines at the top; `Cards` is an ordinary Solid component that
- * takes the two handles as props. */
-
 import { For, from, Show } from "solid-js";
 import { render } from "solid-js/web";
 import type { Handle, Directory } from "@ninepatch/core";

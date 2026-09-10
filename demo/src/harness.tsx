@@ -52,7 +52,7 @@ export function Mount(props: {
 }
 
 /** A section: title and prose at reading width, then a band across the
- * whole page — preview | code | data — with draggable dividers between
+ * whole page — preview | data | code — with draggable dividers between
  * the three and a resize grip for its height. */
 export function Section(props: {
   title: string;
@@ -114,17 +114,17 @@ export function Section(props: {
           <div class="panel-body live">{props.children}</div>
         </div>
         <div class="divider" onPointerDown={[drag, 0]} />
-        <div class="panel code">
-          <h3>code</h3>
-          <div class="panel-body">
-            <Tabs sources={props.sources} />
-          </div>
-        </div>
-        <div class="divider" onPointerDown={[drag, 1]} />
         <div class="panel context">
           <h3>data</h3>
           <div class="panel-body">
             <Windows chain={props.chain} />
+          </div>
+        </div>
+        <div class="divider" onPointerDown={[drag, 1]} />
+        <div class="panel code">
+          <h3>code</h3>
+          <div class="panel-body">
+            <Tabs sources={props.sources} />
           </div>
         </div>
       </div>

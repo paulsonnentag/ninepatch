@@ -1,7 +1,3 @@
-/** §4. The route rendered in the page as an input that looks like a URL
- * bar. It only accepts documents from the seed folder — it opens `demo`
- * and checks. */
-
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";

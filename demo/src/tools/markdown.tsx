@@ -1,8 +1,3 @@
-/** §4. A CodeMirror editor on `selectedDoc` — a link derived from the
- * route. A retarget doesn't re-run anything here: the directory is the
- * same, it just fires with the new document's content, and `bindText`
- * pulls it in. No framework at all: two opens, one editor, one binding. */
-
 import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";

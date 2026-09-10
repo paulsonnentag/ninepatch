@@ -1,7 +1,3 @@
-/** §2/§3. The map never learns what a canvas is: it opens `places` and
- * gets a list shaped the way it wants — the host derived it. Pins share
- * the `selection` entry with whoever else holds it. */
-
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";

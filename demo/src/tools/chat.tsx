@@ -1,8 +1,3 @@
-/** §1. The document is the `doc` entry, the user is the `user` entry.
- * The tool never learns who it's running as — the host decided that by
- * what it mounted. Mount it twice on the same doc with different users
- * and you have two people in one page. */
-
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";

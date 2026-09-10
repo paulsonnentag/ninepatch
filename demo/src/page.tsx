@@ -1,22 +1,20 @@
-/** The page: four sections, each a sentence, a live example, the code
+/** The page: three sections, each a sentence, a live example, the code
  * behind it, and the directories it runs in. Every section gets its own
  * named fork of the page's directory, so the data panel shows exactly
  * that section's world. The host work, fork, mount, hand the directory to
  * a tool, happens right here, and the directory is always passed by hand:
  * nothing is provided through context. */
 
-import { For, from } from "solid-js";
-import { derive, type Handle } from "@ninepatch/core";
-import { frame, dir, seed } from "./boot";
-import { setupRoute, toHash } from "./route";
+import { derive } from "@ninepatch/core";
+import { frame, seed } from "./boot";
+import { setupRoute } from "./route";
 import { Mount, Section } from "./harness";
 import { Chat } from "./tools/chat";
 import { Canvas } from "./tools/canvas";
 import { MapView } from "./tools/map";
 import { UrlBar } from "./tools/urlbar";
 import { Markdown } from "./tools/markdown";
-import type { CanvasDoc, ContactDoc, Folder } from "./types";
-import bootSource from "./boot.ts?raw";
+import type { CanvasDoc } from "./types";
 import chatSource from "./tools/chat.tsx?raw";
 import canvasSource from "./tools/canvas.tsx?raw";
 import mapSource from "./tools/map.tsx?raw";
@@ -26,12 +24,7 @@ import markdownSource from "./tools/markdown.tsx?raw";
 
 // --- host: one fork per section, and what each mounts before rendering -------
 
-const boot = frame.fork("boot");
-const demo = await boot.open<Folder>("demo"); // link → folder doc, listed live below
-
 const chat = frame.fork("chat");
-const alice = await chat.open<ContactDoc>(seed.alice); // the contact cards edit these
-const bob = await chat.open<ContactDoc>(seed.bob);
 
 const places = frame.fork("places");
 places.mount("selection", null as string | null); // a plain value; never touches a document
@@ -48,7 +41,7 @@ places.mount(
 );
 
 const url = frame.fork("url");
-await setupRoute(url, seed); // location ↔ hash, selectedDoc as a derived link
+const location = await setupRoute(url, seed); // remembered in local storage; selectedDoc derived from it
 
 // --- the page -----------------------------------------------------------------
 
@@ -66,22 +59,7 @@ export function Page() {
       </header>
 
       <Section
-        title="Boot"
-        chain={[dir, frame, boot]}
-        sources={[{ name: "boot.ts", code: bootSource }]}
-        prose={
-          <p>
-            One repo, one origin directory, the repo mounted as a server that
-            answers <code>automerge:</code> opens, and <code>demo</code> mounted
-            as a link to the seed folder, listed here live.
-          </p>
-        }
-      >
-        <FolderView folder={demo} />
-      </Section>
-
-      <Section
-        title="Alice and Bob"
+        title="Chat"
         chain={[frame, chat]}
         sources={[{ name: "chat.tsx", code: chatSource }]}
         prose={
@@ -105,10 +83,6 @@ export function Page() {
             tool={Chat}
             mount={{ doc: seed.chat, user: seed.bob }}
           />
-        </div>
-        <div class="row contacts">
-          <ContactCard contact={alice} />
-          <ContactCard contact={bob} />
         </div>
       </Section>
 
@@ -147,18 +121,18 @@ export function Page() {
         ]}
         prose={
           <p>
-            The route lives in the directory as <code>location</code>, kept in
-            step with the browser's hash, and <code>selectedDoc</code> is a link
-            derived from it that the editor follows wherever the buttons, the
-            bar, or the address bar point it.
+            The route lives in the directory as <code>location</code>,
+            remembered in local storage, and <code>selectedDoc</code> is a link
+            derived from it that the editor follows wherever the buttons or the
+            bar point it.
           </p>
         }
       >
         <div class="row">
-          <button onClick={() => (window.location.hash = toHash(seed.notes))}>
+          <button onClick={() => location.set({ docUrl: seed.notes })}>
             notes
           </button>
-          <button onClick={() => (window.location.hash = toHash(seed.notes2))}>
+          <button onClick={() => location.set({ docUrl: seed.notes2 })}>
             notes2
           </button>
         </div>
@@ -166,43 +140,5 @@ export function Page() {
         <Mount dir={url} name="Markdown" tool={Markdown} />
       </Section>
     </>
-  );
-}
-
-// --- little live widgets used by the sections ---------------------------------
-// Each takes a handle the host opened above; `from()` makes it a signal.
-
-function FolderView(props: { folder: Handle<Folder> }) {
-  const folder = from(props.folder, props.folder.value);
-  return (
-    <table class="folder">
-      <tbody>
-        <For each={Object.entries(folder())}>
-          {([name, url]) => (
-            <tr>
-              <td>{name}</td>
-              <td>
-                <code>{url}</code>
-              </td>
-            </tr>
-          )}
-        </For>
-      </tbody>
-    </table>
-  );
-}
-
-function ContactCard(props: { contact: Handle<ContactDoc> }) {
-  const value = from(props.contact, props.contact.value);
-  return (
-    <label class="contact" style={{ "border-color": value().color }}>
-      rename:
-      <input
-        value={value().name}
-        onInput={(e) =>
-          props.contact.change((d) => (d.name = e.currentTarget.value))
-        }
-      />
-    </label>
   );
 }

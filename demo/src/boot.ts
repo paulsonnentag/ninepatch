@@ -1,8 +1,3 @@
-/** §0 Boot: the repo (IndexedDB + BroadcastChannel — open the page in two
- * tabs and everything syncs), the seed documents, the origin directory
- * with the repo mounted as a server, and `demo` as a link to the seed
- * folder. Everything on the page hangs off `frame`. */
-
 import { Repo, type AnyDocumentId } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
