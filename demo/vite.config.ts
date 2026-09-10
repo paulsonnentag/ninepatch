@@ -1,6 +1,6 @@
-import { defineConfig } from "vite"
-import solid from "vite-plugin-solid"
-import wasm from "vite-plugin-wasm"
+import { defineConfig } from "vite";
+import solid from "vite-plugin-solid";
+import wasm from "vite-plugin-wasm";
 
 export default defineConfig({
   plugins: [solid(), wasm()],
@@ -11,4 +11,4 @@ export default defineConfig({
     // deps like eventemitter3 that need the interop).
     exclude: ["@automerge/automerge"],
   },
-})
+});

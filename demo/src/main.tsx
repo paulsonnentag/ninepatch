@@ -1,7 +1,7 @@
-import { render } from "solid-js/web"
-import { Page } from "./page"
-import "./styles.css"
+import { render } from "solid-js/web";
+import { Page } from "./page";
+import "./styles.css";
 
-const app = document.getElementById("app")!
-app.replaceChildren()
-render(() => <Page />, app)
+const app = document.getElementById("app")!;
+app.replaceChildren();
+render(() => <Page />, app);

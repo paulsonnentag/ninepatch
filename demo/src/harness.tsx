@@ -1,6 +1,11 @@
-import { Show, type JSX } from "solid-js"
+import { Show, type JSX } from "solid-js";
 
-export function Section(props: { title: string; prose: JSX.Element; source?: string; children: JSX.Element }) {
+export function Section(props: {
+  title: string;
+  prose: JSX.Element;
+  source?: string;
+  children: JSX.Element;
+}) {
   return (
     <section>
       <h2>{props.title}</h2>
@@ -15,5 +20,5 @@ export function Section(props: { title: string; prose: JSX.Element; source?: str
         </details>
       </Show>
     </section>
-  )
+  );
 }

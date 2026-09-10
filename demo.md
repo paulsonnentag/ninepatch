@@ -204,13 +204,10 @@ Needs:
 - A repo (IndexedDB + BroadcastChannel).
 - Seed documents, created on first visit and remembered in `localStorage`:
   a `demo` folder `Record<name, url>` pointing at `chat`, `canvas`,
-  `notes`, `notes2`, two contact docs `alice` and `bob`
-  (`ContactDoc = { name: string; color: string }`), and an `account`
-  (`AccountDoc = { contact: url }`, pointing at alice).
+  `notes`, `notes2`, and two contact docs `alice` and `bob`
+  (`ContactDoc = { name: string; color: string }`).
 - The origin namespace with the repo server on it, from the spec.
 - `demo` mounted as a link to the seed folder.
-- `window.accountDoc = await repo.find(seed.account)` — the old world's
-  way in, kept around so §1 can show it.
 
 ```ts
 export const ns = createNamespace()
@@ -228,7 +225,6 @@ ns.on("close", (target, from) => {
 
 ns.mount("demo", seed.url)                        // a link; demo/chat walks the folder and follows again
 export const frame = ns.fork()                    // the page renders under this: <NamespaceProvider ns={frame}>
-window.accountDoc = await repo.find<AccountDoc>(seed.account)
 ```
 
 The section renders the folder — `createValue(createOpen<Folder>("demo"))`
@@ -247,15 +243,9 @@ way is an entry in the tool's namespace, and the host decides what's there
 **Needs.** `ChatDoc = { messages: { author: string; text: string; at: number }[] }`.
 The seed's `alice` and `bob`. A `<Line>` and a `<Form>`.
 
-**The old way** — shown as code, not run:
-
-```ts
-const account = window.accountDoc                                   // put there at boot
-const contact = await repo.find<ContactDoc>(account.doc().contact)
-const author = contact.doc().name
-```
-
-Whoever owns `window` picks the user, once, for everything on the page.
+**The old way** — described, not run: patchwork-next hangs the account off
+a global (`window.patchwork.account`), and whoever owns `window` picks the
+user, once, for everything on the page.
 
 **The tool.**
 

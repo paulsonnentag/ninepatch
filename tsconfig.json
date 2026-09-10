@@ -18,5 +18,11 @@
       "@ninepatch/codemirror": ["./frameworks/codemirror/src/index.ts"]
     }
   },
-  "include": ["core/src", "frameworks/solid/src", "frameworks/codemirror/src", "demo/src", "demo/vite.config.ts"]
+  "include": [
+    "core/src",
+    "frameworks/solid/src",
+    "frameworks/codemirror/src",
+    "demo/src",
+    "demo/vite.config.ts"
+  ]
 }
