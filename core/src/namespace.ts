@@ -5,11 +5,22 @@
  * it is canonical. */
 
 import { brand, Emitter, isHandle, wrap, type Handle } from "./handle";
-import { Overlay } from "./overlay";
+import { Overlay, type Entry } from "./overlay";
 import { isUrlRooted, parsePath, startsWith, type Path } from "./path";
 import { walk, type WalkResult } from "./walk";
 
+export type { Entry };
+
 export type Namespace = {
+  /** The name given to fork(); for open(), the path opened; "root" for
+   * createNamespace(). A label, nothing more. */
+  readonly name: string;
+  /** Everything opened or forked from this namespace that is still open. */
+  readonly children: ReadonlySet<Namespace>;
+  /** This namespace's own overlay — what it mounted, was served, or cut.
+   * Says nothing about what it inherits. */
+  entries(): Entry[];
+
   /** Walk down (relative path) or ask for a document (URL). Returns a new
    * namespace positioned there. Name a type and you get a namespace that
    * is also a handle; don't, and you get a bare namespace. Rejects with
@@ -19,7 +30,7 @@ export type Namespace = {
 
   /** A new namespace at this same position with its own overlay: reads
    * fall through to this one, writes stay in the fork. */
-  fork<Self>(this: Self): Self;
+  fork<Self>(this: Self, name?: string): Self;
 
   /** Into this namespace's overlay. Replaces what this namespace had
    * there. A Handle is used as-is; anything else is wrapped in a new one. */
@@ -29,7 +40,10 @@ export type Namespace = {
    * cut is allowed. */
   unmount(path: Path): void;
 
+  /** The value here was mounted, swapped, removed, or fired. */
   on(event: "change", fn: () => void): () => void;
+  /** entries() or children changed. */
+  on(event: "mutated", fn: () => void): () => void;
   on(
     event: "open",
     fn: (target: string[], from: Namespace) => Promise<void>
@@ -54,7 +68,7 @@ export class NotFound extends Error {
 }
 
 export function createNamespace(): Namespace {
-  return new NamespaceImpl(undefined, []) as unknown as Namespace;
+  return new NamespaceImpl(undefined, [], "root") as unknown as Namespace;
 }
 
 type OpenListener = (target: string[], from: Namespace) => Promise<void>;
@@ -65,6 +79,7 @@ type Fired = { key: string; target: string[] };
 
 export class NamespaceImpl {
   readonly [brand] = true;
+  readonly name: string;
   readonly overlay = new Overlay();
   readonly parent: NamespaceImpl | undefined;
   /** Position relative to parent, as requested — links are re-followed on
@@ -81,6 +96,7 @@ export class NamespaceImpl {
   readonly pending = new Map<string, Promise<void>>();
   readonly listeners = {
     change: new Emitter(),
+    mutated: new Emitter(),
     destroy: new Emitter(),
     open: new Set<OpenListener>(),
     close: new Set<CloseListener>(),
@@ -89,14 +105,23 @@ export class NamespaceImpl {
   private held: Held[] = [];
   private closed = false;
   private watch: Watch | undefined;
+  private readonly unsubOverlay: () => void;
 
-  constructor(parent: NamespaceImpl | undefined, base: string[]) {
+  constructor(parent: NamespaceImpl | undefined, base: string[], name: string) {
     this.parent = parent;
     this.base = base;
+    this.name = name;
     this.pos = !parent || isUrlRooted(base) ? base : [...parent.pos, ...base];
+    this.unsubOverlay = this.overlay.mutated.on(() =>
+      this.listeners.mutated.emit()
+    );
   }
 
   // --- namespace surface ---------------------------------------------------
+
+  entries(): Entry[] {
+    return this.overlay.entries();
+  }
 
   async open(path: Path): Promise<NamespaceImpl> {
     this.assertOpen();
@@ -105,11 +130,9 @@ export class NamespaceImpl {
     return this.openRel(rel);
   }
 
-  fork(): NamespaceImpl {
+  fork(name = "fork"): NamespaceImpl {
     this.assertOpen();
-    const child = new NamespaceImpl(this, []);
-    this.children.add(child);
-    return child;
+    return this.adopt(new NamespaceImpl(this, [], name));
   }
 
   mount(path: Path, what: unknown): void {
@@ -125,9 +148,10 @@ export class NamespaceImpl {
   }
 
   on(
-    event: "change" | "destroy" | "open" | "close",
+    event: "change" | "mutated" | "destroy" | "open" | "close",
     fn: (...args: never[]) => unknown
   ): () => void {
+    if (event === "mutated") return this.listeners.mutated.on(fn as () => void);
     if (event === "open") {
       const listener = fn as OpenListener;
       this.listeners.open.add(listener);
@@ -156,12 +180,15 @@ export class NamespaceImpl {
     for (const child of [...this.children].reverse()) child.close();
     this.children.clear();
     this.watch?.stop();
+    this.unsubOverlay();
     this.listeners.destroy.emit();
     this.listeners.destroy.clear();
     this.listeners.change.clear();
+    this.listeners.mutated.clear();
     this.listeners.open.clear();
     this.listeners.close.clear();
-    this.parent?.children.delete(this);
+    if (this.parent?.children.delete(this))
+      this.parent.listeners.mutated.emit();
     const held = this.held;
     this.held = [];
     for (const { requester, key } of held) {
@@ -197,9 +224,14 @@ export class NamespaceImpl {
   async openRel(rel: string[]): Promise<NamespaceImpl> {
     const abs = isUrlRooted(rel) ? rel : [...this.pos, ...rel];
     const { fired } = await resolveWithFills(this, abs);
-    const child = new NamespaceImpl(this, rel);
-    this.children.add(child);
+    const child = this.adopt(new NamespaceImpl(this, rel, rel.join("/")));
     child.hold(this, fired);
+    return child;
+  }
+
+  private adopt(child: NamespaceImpl): NamespaceImpl {
+    this.children.add(child);
+    this.listeners.mutated.emit();
     return child;
   }
 
@@ -320,14 +352,35 @@ class FromView {
     private readonly listener: NamespaceImpl
   ) {}
 
+  get name(): string {
+    return this.requester.name;
+  }
+
+  get children(): ReadonlySet<NamespaceImpl> {
+    return this.requester.children;
+  }
+
+  /** The requester's entries, in the listener's coordinates where those
+   * exist; URL-rooted paths are the same everywhere. */
+  entries(): Entry[] {
+    const prefix =
+      isUrlRooted(this.listener.pos) || isUrlRooted(this.requester.pos)
+        ? []
+        : this.requester.pos.slice(this.listener.pos.length);
+    return this.requester.entries().map(({ path, handle }) => ({
+      path: isUrlRooted(path) ? path : [...prefix, ...path],
+      handle,
+    }));
+  }
+
   open(path: Path): Promise<NamespaceImpl> {
     const rel = this.rel(path);
     if (rel.length === 0) throw new Error("empty path — use fork()");
     return this.requester.openRel(rel);
   }
 
-  fork(): NamespaceImpl {
-    return this.requester.fork();
+  fork(name?: string): NamespaceImpl {
+    return this.requester.fork(name);
   }
 
   mount(path: Path, what: unknown): void {
@@ -339,7 +392,7 @@ class FromView {
   }
 
   on(
-    event: "change" | "destroy" | "open" | "close",
+    event: "change" | "mutated" | "destroy" | "open" | "close",
     fn: (...args: never[]) => unknown
   ): () => void {
     return this.requester.on(event, fn);

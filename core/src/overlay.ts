@@ -1,6 +1,7 @@
 /** One overlay per namespace: a private path tree plus a URL area. Cuts
  * block fall-through past this overlay at a node and its subtree —
- * permanently. `mutated` fires on every mount and unmount. */
+ * permanently. `mutated` fires on every mount and unmount; `entries()`
+ * lists both areas. */
 
 import { Emitter, type Handle } from "./handle";
 import { isUrlRooted } from "./path";
@@ -10,6 +11,10 @@ export type OverlayNode = {
   children: Map<string, OverlayNode>;
   cut: boolean;
 };
+
+/** One thing in an overlay: a mount, or a cut with nothing mounted over
+ * it (no handle). URL-area paths start with the URL. */
+export type Entry = { path: string[]; handle: Handle<unknown> | undefined };
 
 export type Lookup = {
   handle: Handle<unknown> | undefined;
@@ -46,6 +51,14 @@ export class Overlay {
       hasEntries: !!node && node.children.size > 0,
       cutBlocked,
     };
+  }
+
+  /** Every node holding a handle or a cut, paths first, then URLs. */
+  entries(): Entry[] {
+    const out: Entry[] = [];
+    collect(this.root, [], out);
+    for (const [url, node] of this.urls) collect(node, [url], out);
+    return out;
   }
 
   mount(names: string[], handle: Handle<unknown>): void {
@@ -88,6 +101,13 @@ export class Overlay {
     }
     return node;
   }
+}
+
+function collect(node: OverlayNode, path: string[], out: Entry[]): void {
+  if (path.length > 0 && (node.handle || node.cut))
+    out.push({ path, handle: node.handle });
+  for (const [name, child] of node.children)
+    collect(child, [...path, name], out);
 }
 
 function newNode(): OverlayNode {

@@ -44,7 +44,7 @@ ns.on("close", (target, from) => {
 
 ns.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
 
-export const frame = ns.fork(); // the page renders under this
+export const frame = ns.fork("page"); // the page renders under this
 
 async function findOrCreateSeed(): Promise<Seed> {
   const KEY = "ninepatch:demo:folder";

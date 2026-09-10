@@ -31,6 +31,9 @@ importers:
       '@automerge/automerge-repo-storage-indexeddb':
         specifier: ^2.0.0
         version: 2.5.6
+      '@codemirror/lang-javascript':
+        specifier: ^6.2.5
+        version: 6.2.5
       '@codemirror/lang-markdown':
         specifier: ^6.3.0
         version: 6.5.2
@@ -40,6 +43,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.36.0
         version: 6.43.11
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@ninepatch/codemirror':
         specifier: workspace:*
         version: link:../frameworks/codemirror

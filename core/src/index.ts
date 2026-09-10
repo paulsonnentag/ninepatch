@@ -1,6 +1,7 @@
 export {
   createNamespace,
   NotFound,
+  type Entry,
   type Namespace,
   type Opened,
 } from "./namespace";
@@ -13,4 +14,4 @@ export {
   type DocHandleLike,
   type Handle,
 } from "./handle";
-export type { Path } from "./path";
+export { hasScheme, type Path } from "./path";

@@ -1,7 +1,9 @@
 /** Solid over ninepatch. A tool is a function of one namespace; the DOM is
  * the `dom` entry. `createOpen` is a resource over `ns.open`, `createValue`
  * turns a handle into a signal, `tool` wraps a component, `Mount` is the
- * host side: fork, mount, run, close on cleanup. */
+ * host side: fork, mount, run, close on cleanup. `createEntries` and
+ * `createChildren` are the namespace's own listing as signals, for
+ * drawing the tree. */
 
 import {
   createContext,
@@ -17,6 +19,7 @@ import {
 import { render } from "solid-js/web";
 import {
   NotFound,
+  type Entry,
   type Handle,
   type Namespace,
   type Opened,
@@ -108,16 +111,20 @@ export function tool(Component: () => JSX.Element): Tool {
   };
 }
 
-/** Host side: a slot that forks the provided namespace, mounts `mount`
- * plus its own element as `dom`, runs the tool, closes on cleanup. */
+/** Host side: a slot that forks the provided namespace (under `name`),
+ * mounts `mount` plus its own element as `dom`, runs the tool, closes on
+ * cleanup. */
 export function Mount(props: {
   tool: Tool;
+  name?: string;
   mount?: Record<string, unknown>;
   unmount?: string[];
   class?: string;
 }) {
-  const ns = useNamespace().fork();
-  const el = (<div class={`tool ${props.class ?? ""}`} />) as HTMLDivElement;
+  const ns = useNamespace().fork(props.name);
+  const el = (
+    <div class={["tool", props.class].filter(Boolean).join(" ")} />
+  ) as HTMLDivElement;
   for (const [path, what] of Object.entries(props.mount ?? {}))
     ns.mount(path, what);
   for (const path of props.unmount ?? []) ns.unmount(path);
@@ -127,7 +134,23 @@ export function Mount(props: {
   return el;
 }
 
+/** A namespace's own overlay as a signal; re-reads on `mutated`. */
+export function createEntries(ns: Namespace): Accessor<Entry[]> {
+  return createMutated(ns, () => ns.entries());
+}
+
+/** A namespace's live children as a signal; re-reads on `mutated`. */
+export function createChildren(ns: Namespace): Accessor<Namespace[]> {
+  return createMutated(ns, () => [...ns.children]);
+}
+
 const Context = createContext<Namespace>();
+
+function createMutated<T>(ns: Namespace, get: () => T): Accessor<T> {
+  const [value, set] = createSignal(get(), { equals: false });
+  onCleanup(ns.on("mutated", () => set(() => get())));
+  return value;
+}
 
 function read<T>(h: Handle<T>): T | undefined {
   try {

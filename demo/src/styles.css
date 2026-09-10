@@ -11,14 +11,25 @@
 }
 
 body {
-  margin: 0 auto;
-  padding: 2rem 1rem 6rem;
-  max-width: 760px;
+  margin: 0;
+  padding: 2rem 0 6rem;
   font:
     16px/1.55 ui-sans-serif,
     system-ui,
     sans-serif;
   color: var(--ink);
+}
+
+/* reading-width text; the panels break out to the full page */
+header,
+h2,
+.prose {
+  padding: 0 2rem;
+}
+
+header p,
+.prose {
+  max-width: 760px;
 }
 
 header p {
@@ -31,8 +42,6 @@ h1 {
 
 section {
   margin-top: 3rem;
-  border-top: 1px solid var(--line);
-  padding-top: 1rem;
 }
 
 h2 {
@@ -57,23 +66,493 @@ pre {
   font-size: 0.8rem;
 }
 
-details {
-  margin-top: 0.75rem;
+/* the band: preview | code | namespace, edge to edge. Columns come from
+   the dividers (draggable), height from the grip in the corner. */
+.panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7px minmax(0, 1fr) 7px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--line);
+  resize: vertical;
+  overflow: hidden;
+  min-height: 12rem;
 }
 
-details summary {
-  cursor: pointer;
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel h3 {
+  margin: 0;
+  padding: 0 1rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--faint);
-  font-size: 0.85rem;
 }
 
-details pre {
-  max-height: 24rem;
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.panel.code .panel-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: #f6f6f6;
+}
+
+.divider {
+  position: relative;
+  margin-top: 1.55rem; /* the label row */
+  border-top: 1px solid var(--line);
+  cursor: col-resize;
+}
+
+.divider::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line);
+  transition: border-color 0.1s;
+}
+
+.divider:hover::before,
+body.dragging .divider::before {
+  border-left: 2px solid var(--accent);
+}
+
+body.dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  background: #efefef;
+  overflow-x: auto;
+  flex: none;
+}
+
+.tab {
+  border: none;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.4rem 0.8rem;
+  font:
+    0.75rem ui-monospace,
+    monospace;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: #e8e8e8;
+}
+
+.tab.active {
+  background: #f6f6f6;
+  color: var(--ink);
+}
+
+.panel.code .source {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  flex: 1;
+  min-height: 0;
+  max-height: 36rem;
   overflow: auto;
 }
 
+/* syntax colours — lezer's classHighlighter names */
+.tok-keyword {
+  color: #a626a4;
+}
+.tok-string,
+.tok-string2 {
+  color: #50a14f;
+}
+.tok-comment {
+  color: #999;
+  font-style: italic;
+}
+.tok-number,
+.tok-bool,
+.tok-null,
+.tok-atom {
+  color: #986801;
+}
+.tok-typeName,
+.tok-className {
+  color: #c18401;
+}
+.tok-propertyName,
+.tok-attributeName {
+  color: #e45649;
+}
+.tok-variableName.tok-definition,
+.tok-definition {
+  color: #4078f2;
+}
+.tok-tagName {
+  color: #1f6feb;
+}
+.tok-operator,
+.tok-punctuation {
+  color: #555;
+}
+.tok-meta {
+  color: #999;
+}
+
+/* the context tree */
+.node {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.node > summary {
+  cursor: pointer;
+  padding: 0.15rem 0;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.node > summary::-webkit-details-marker {
+  display: none;
+}
+
+.node > summary::before {
+  content: "▷";
+  font-size: 0.65rem;
+  color: var(--faint);
+  width: 0.9rem;
+  flex: none;
+}
+
+.node[open] > summary::before {
+  content: "▽";
+}
+
+.node-name {
+  font-weight: 600;
+}
+
+.node > .entries {
+  margin-left: 0.9rem;
+}
+
+/* children hang off a line drawn down from the parent, a tick across to
+   each; a namespace that changed nothing isn't drawn, so the container may
+   end up with no boxes in it — then neither is the line */
+.node > .node-children {
+  --tick: 0.8rem;
+  position: relative;
+  margin-left: 0.35rem;
+  padding-left: var(--tick);
+  padding-top: 0.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.node > .node-children:not(:has(> .node)) {
+  display: none;
+}
+
+.node > .node-children::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0.7rem;
+  border-left: 1px solid var(--line);
+}
+
+.node-children > .node {
+  position: relative;
+}
+
+.node-children > .node::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--tick));
+  top: 0.7rem;
+  width: calc(var(--tick) - 0.15rem);
+  border-top: 1px solid var(--line);
+}
+
+.entries {
+  border-collapse: collapse;
+  width: calc(100% - 0.9rem);
+  margin: 0.15rem 0 0.4rem;
+}
+
+.entries td {
+  border: 1px solid var(--line);
+  padding: 0.15rem 0.4rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.entries td.entry-path {
+  width: 34%;
+}
+
+.entries td.entry-value.expandable {
+  cursor: pointer;
+}
+
+.entries td.entry-value.expandable:hover,
+.entries td.entry-value:focus {
+  background: #faf8ff;
+  outline: none;
+}
+
+.entries tr.expanded td {
+  border-bottom-color: transparent;
+}
+
+.entries tr.entry-editor td {
+  padding: 0.3rem 0.5rem 0.5rem;
+  background: #fbfbfb;
+  outline: none;
+}
+
+.entries tr.cut td {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.entries code {
+  font-size: 0.75rem;
+}
+
+.entry-path .url,
+.entry-value .url,
+.copy-url .url {
+  color: var(--accent);
+}
+
+/* a dom element as markup, one line, cut with an ellipsis */
+.entry-value code.dom {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: crosshair;
+}
+
+.dom-tag {
+  color: #1f6feb;
+}
+
+.dom-attr {
+  color: #6f42c1;
+}
+
+.dom-value {
+  color: #2e7d32;
+}
+
+/* what the hovered row points at, in the page */
+.ns-highlight {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.copy-url {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0 0 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-url:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.copy-url.copied .url {
+  color: #2e7d32;
+}
+
+.unresolved i {
+  color: var(--faint);
+}
+
+/* the raw editor */
+.raw {
+  font:
+    0.75rem/1.6 ui-monospace,
+    monospace;
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.raw-error {
+  color: #c62828;
+  font-style: italic;
+}
+
+.raw-row {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  min-height: 1.5rem;
+}
+
+.raw-row:hover .raw-actions {
+  opacity: 1;
+}
+
+.raw-toggle {
+  width: 1rem;
+  flex: none;
+  cursor: pointer;
+  color: var(--faint);
+  user-select: none;
+}
+
+.raw-toggle-spacer {
+  cursor: default;
+}
+
+.raw-key {
+  color: #5e81ac;
+}
+
+.raw-key.index {
+  color: var(--faint);
+}
+
+.raw-colon {
+  color: var(--faint);
+  margin-right: 0.25rem;
+}
+
+.raw-bracket,
+.raw-count {
+  color: var(--faint);
+}
+
+.raw-count {
+  font-style: italic;
+  margin: 0 0.25rem;
+}
+
+.raw-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.raw-value.string {
+  color: #2e7d32;
+}
+
+.raw-value.number {
+  color: #6a1b9a;
+}
+
+.raw-value.boolean {
+  color: #0277bd;
+}
+
+.raw-value.null {
+  color: #c62828;
+}
+
+.raw-value.url {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.raw-badge {
+  font-size: 0.7rem;
+  padding: 0 0.35rem;
+  border-radius: 0.25rem;
+  background: #eee;
+}
+
+.raw-actions {
+  display: inline-flex;
+  gap: 0.1rem;
+  margin-left: 0.4rem;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.raw-actions button,
+.raw-inline button {
+  border: none;
+  background: transparent;
+  padding: 0 0.3rem;
+  font: inherit;
+  color: var(--faint);
+  line-height: 1.2;
+}
+
+.raw-actions button:hover,
+.raw-inline button:hover {
+  background: #eee;
+  color: var(--ink);
+}
+
+.raw-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.raw-input {
+  font: inherit;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  min-width: 4rem;
+  max-width: 14rem;
+}
+
+.raw-kind {
+  min-width: 0;
+  color: var(--faint);
+}
+
+.raw-ok {
+  color: #2e7d32 !important;
+}
+
+.raw-cancel {
+  color: #c62828 !important;
+}
+
 .live {
-  margin-top: 1rem;
+  min-width: 0;
 }
 
 .row {
@@ -82,8 +561,10 @@ details pre {
   margin-bottom: 0.75rem;
 }
 
-.row > .tool {
+.row > .tool,
+.row > .contact {
   flex: 1;
+  min-width: 0;
 }
 
 .loading {
@@ -142,8 +623,10 @@ details pre {
   border-top: 1px solid var(--line);
 }
 
-.chat input {
+.chat input,
+.contact input {
   flex: 1;
+  min-width: 0;
 }
 
 .contacts .contact {

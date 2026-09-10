@@ -38,9 +38,11 @@ Some namespaces are also handles.
   field.
 - **URLs are keys, not paths.** `open`, `mount`, `unmount` take a relative
   path *or* a URL. URL-keyed entries live in a separate area of each
-  overlay, reachable only by URL, never enumerable, never by path — so a
-  document's subtree never grows a folder of other documents, and no
-  namespace can see what others opened unless it knows the URL.
+  overlay, reachable only by URL, never by path — so a document's subtree
+  never grows a folder of other documents. A namespace can list its *own*
+  overlay (`entries()`), URLs included; nobody else's. So no namespace can
+  see what others opened unless it knows the URL — except the ones it
+  opened or forked itself, which it reaches through `children`.
   `automerge:x…/foo` is a URL plus a relative path below it. URL reads fall
   through like everything else: if an ancestor has the doc, you get its
   handle.
@@ -72,8 +74,22 @@ type Handle<T> = {
 /** "a/b" or ["a", "b"]. A first name with a scheme is a URL. */
 type Path = string | string[]
 
+/** One thing in an overlay. `path` is relative to the namespace; a first
+ * name with a scheme is a URL. No handle means a cut with nothing mounted
+ * over it. */
+type Entry = { path: string[]; handle: Handle<unknown> | undefined }
+
 /** A position: navigate, mount, listen. No value of its own. */
 type Namespace = {
+  /** The name given to fork(); for open(), the path opened; "root" for
+   * createNamespace(). A label, nothing more. */
+  readonly name: string
+  /** Everything opened or forked from this namespace that is still open. */
+  readonly children: ReadonlySet<Namespace>
+  /** This namespace's own overlay — what it mounted, was served, or cut.
+   * Says nothing about what it inherits. */
+  entries(): Entry[]
+
   /** Walk down (relative path) or ask for a document (URL). Returns a new
    * namespace positioned there. Name a type and you get a namespace that
    * is also a handle; don't, and you get a bare namespace. Rejects with
@@ -83,7 +99,7 @@ type Namespace = {
 
   /** A new namespace at this same position with its own overlay: reads
    * fall through to this one, writes stay in the fork. */
-  fork<Self>(this: Self): Self
+  fork<Self>(this: Self, name?: string): Self
 
   /** Into this namespace's overlay. Replaces what this namespace had
    * there. A Handle is used as-is; anything else is wrapped in a new one. */
@@ -95,6 +111,9 @@ type Namespace = {
 
   /** The value here was mounted, swapped, removed, or fired. */
   on(event: "change", fn: () => void): () => void
+  /** entries() or children changed: a mount, an unmount, a fill, a child
+   * opened, forked, or closed. */
+  on(event: "mutated", fn: () => void): () => void
   /** An open at or below here found nothing — from this namespace or
    * anything opened or forked from it. `target`: the names from here to
    * the node the walk is trying to reach; if it went through a link, the
@@ -116,6 +135,8 @@ type Namespace = {
 type Opened<T> = [T] extends [never] ? Namespace : Namespace & Handle<T>
 
 function createNamespace(): Namespace
+/** The URL test — `^[a-z][a-z0-9+.-]*:` — for anyone drawing paths. */
+function hasScheme(name: string): boolean
 
 /** What open rejects with, and what `value` throws when nothing is there. */
 class NotFound extends Error { readonly target: string[] }
@@ -210,6 +231,11 @@ error: `value` throws `NotFound` — everywhere `value` has nothing to read,
    if nothing is (a link retargeted to a document the server can't serve,
    an ancestor unmounting what you fell through to), `value` throws
    `NotFound` until something is. No stale value is ever returned.
+10. **Listing is own-overlay.** `entries()` is what this namespace put
+   there — mounts, served fills (so URLs), cuts — never what it inherits,
+   never a merged directory. `children` is what it opened or forked and
+   hasn't closed. Both are labels for a debugger or a host, not a walk:
+   nothing in them fires `open`. `mutated` fires when either changes.
 
 ## Examples
 
@@ -298,16 +324,17 @@ selected.on("change", () => show(selected.value))     // fires once the new docu
 ### A component
 
 Components receive a namespace and nothing else. The DOM is an entry. A
-child is a `fork()`: same position, private overlay. There is nothing to
-return: when whoever handed you the namespace closes it, everything forked
-from it closes too, and `destroy` is where the rest of the cleanup goes.
+child is a `fork()`: same position, private overlay; the name is a label
+for whoever inspects the tree later. There is nothing to return: when
+whoever handed you the namespace closes it, everything forked from it
+closes too, and `destroy` is where the rest of the cleanup goes.
 
 ```ts
 async function Frame(ns: Namespace) {
   const dom = await ns.open<Element>("dom")
   const slot = dom.value.appendChild(document.createElement("div"))
 
-  const child = ns.fork()
+  const child = ns.fork("markdown")
   child.mount("dom", slot)                     // the child renders here
   child.unmount("account")                     // cut for child and below; child can't undo it
   child.mount("selectedDoc", "automerge:other…")   // shadows; Frame's own view unchanged
@@ -315,6 +342,27 @@ async function Frame(ns: Namespace) {
 
   ns.on("destroy", () => slot.remove())        // child, and everything Markdown opened, close on their own
 }
+```
+
+### Looking at the tree
+
+A host that named its forks can draw them. `entries()` is each
+namespace's own overlay, `children` is what hangs below it — so the
+picture is the hierarchy of namespaces with a table per node, and it
+updates on `mutated`.
+
+```ts
+function draw(ns: Namespace, depth = 0) {
+  console.log("  ".repeat(depth) + ns.name)
+  for (const { path, handle } of ns.entries())
+    console.log("  ".repeat(depth + 1) + path.join("/"), handle ? handle.value : "(cut)")
+  for (const child of ns.children) draw(child, depth + 1)
+}
+
+const bob = ns.fork("Bob")
+bob.mount("dom", slot)
+Chat(bob)                                 // opens "doc" — a fill lands in bob's overlay
+bob.on("mutated", () => draw(ns))         // root › Bob › { dom: <div>, automerge:chat…: {…} }
 ```
 
 ### A capability is just a deep namespace
@@ -385,7 +433,9 @@ const { loadComponent } = (await ns.open<SolidPkg>("modules/solid")).value
 
 ## Deferred
 
-- Listing / directories.
+- Directories: a merged listing of what a walk would find at a position,
+  through the fall-through chain and across links. `entries()` is
+  own-overlay only.
 - Read-only handles (a viewer that can't `set`).
 - A reactive query for a path that isn't there yet — automerge's
   `findWithProgress` — and with it, replaying pending paths to servers that
