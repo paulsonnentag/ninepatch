@@ -5,6 +5,7 @@
   --line: #ddd;
   --accent: #2f6fed;
   --selection: #2f6fed;
+  --pane: #f4f4f6; /* the three panes' background */
 }
 
 * {
@@ -125,13 +126,13 @@ pre {
   overflow: auto;
   border-top: 1px solid var(--line);
   padding: 1rem;
+  background: var(--pane);
 }
 
 .panel.code .panel-body {
   display: flex;
   flex-direction: column;
   padding: 0;
-  background: #f6f6f6;
 }
 
 /* a hairline between panes; the grab zone is wider than the line */
@@ -141,7 +142,6 @@ pre {
   margin-top: 1.55rem; /* the label row */
   background: var(--line);
   cursor: col-resize;
-  transition: background-color 0.1s;
 }
 
 .divider::before {
@@ -154,11 +154,6 @@ pre {
   cursor: col-resize;
 }
 
-.divider:hover,
-body.dragging .divider {
-  background: var(--accent);
-}
-
 body.dragging {
   cursor: col-resize;
   user-select: none;
@@ -168,7 +163,6 @@ body.dragging {
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--line);
-  background: #efefef;
   overflow-x: auto;
   flex: none;
 }
@@ -191,7 +185,7 @@ body.dragging {
 }
 
 .tab.active {
-  background: #f6f6f6;
+  background: white;
   color: var(--ink);
 }
 
@@ -202,6 +196,7 @@ body.dragging {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  background: white;
 }
 
 /* syntax colours — lezer's classHighlighter names */
@@ -255,7 +250,6 @@ body.dragging {
 .windows {
   padding: 1rem;
   font-size: 0.8rem;
-  background: #f4f4f6;
 }
 
 /* the window is a fixed height; the list and the preview scroll inside */
@@ -318,16 +312,6 @@ body.dragging {
   height: 7px;
   cursor: ns-resize;
   z-index: 1;
-}
-
-.window-grip:hover,
-body.resizing .window-grip {
-  background: linear-gradient(
-    transparent 3px,
-    var(--accent) 3px,
-    var(--accent) 4px,
-    transparent 4px
-  );
 }
 
 body.resizing {
