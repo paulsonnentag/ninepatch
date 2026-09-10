@@ -3,7 +3,10 @@ export {
   NotFound,
   type Entry,
   type Directory,
+  type Main,
   type Opened,
+  type Process,
+  type Root,
   type Server,
 } from "./directory";
 export {

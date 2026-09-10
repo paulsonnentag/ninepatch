@@ -224,7 +224,10 @@ type Root = Omit<Directory, "fork"> & {
   readonly processes: Handle<Process[]>       // every process at or below here
 }
 
-function createDirectory(): Root
+function createDirectory(options?: {
+  /** How spawn loads modules. The platform's import() by default. */
+  import?(url: string): Promise<{ default: Main }>
+}): Root
 /** `^[a-z][a-z0-9+.-]*:` — for anyone drawing paths. */
 function hasScheme(name: string): boolean
 /** What open rejects with, and what `value` throws when nothing is there. */
@@ -570,7 +573,8 @@ const { loadComponent } = (await page.open<SolidPkg>("modules/solid")).value
 - What a process writes: `children` says what it opened, not what it
   changed or mounted.
 - Modules from documents: `spawn` takes what `import()` takes. Running a
-  module stored at an `automerge:` URL needs a loader in front of it.
+  module stored at an `automerge:` URL needs a loader —
+  `createDirectory`'s `import` option is the hook.
 - A per-subtree process table. Only the root has one.
 - A reactive query for a path that isn't there yet, and replaying pending
   paths to servers that register late.

@@ -1,8 +1,11 @@
-/** The directory: a position plus a private overlay. `open` walks down
- * (or asks for a URL) and returns a new directory positioned there;
- * misses bubble to the servers registered up the chain of directories this
- * one was opened or forked from; unanswered requests reject with NotFound.
- * See spec.md — it is canonical. */
+/** The directory: a collection of named things — its own overlay of
+ * entries, the directory it came from, and the path it was opened at
+ * there. Reads check the own entries and fall through — live — to the
+ * parent at `path + rel`; misses bubble to the servers registered up the
+ * chain; unanswered requests reject with NotFound. A process is a module
+ * running in a directory: `spawn` imports it and runs its default export
+ * with a directory that shares these entries and has a lifetime of its
+ * own. See spec.md — it is canonical. */
 
 import {
   brand,
@@ -21,10 +24,10 @@ import { walk, type WalkResult } from "./walk";
 export type { Entry };
 
 export type Directory = {
-  /** The name given to fork(); for open(), the path opened; "root" for
-   * createDirectory(). A label, nothing more. */
+  /** The name given to fork() or spawn(); for open(), the path opened;
+   * "root" for createDirectory(). A label, nothing more. */
   readonly name: string;
-  /** This directory's own overlay — what it mounted, was served, or cut.
+  /** This directory's own entries — what it mounted, was served, or cut.
    * Says nothing about what it inherits. Read-only. */
   readonly entries: Handle<Entry[]>;
   /** Everything opened or forked from this directory that is still open.
@@ -35,17 +38,18 @@ export type Directory = {
   readonly signal: AbortSignal;
 
   /** Walk down (relative path) or ask for a document (URL). Returns a new
-   * directory positioned there. Name a type and you get a directory that
-   * is also a handle; don't, and you get a bare directory. Rejects with
-   * NotFound once the servers have answered and nothing is there. The
-   * empty path throws — use fork(). */
+   * directory for what is there; it remembers the path and reads through
+   * this directory. Name a type and you get a directory that is also a
+   * handle; don't, and you get a bare directory. Rejects with NotFound
+   * once the servers have answered and nothing is there. The empty path
+   * throws — use fork(). */
   open<T = never>(path: Path): Promise<Opened<T>>;
 
-  /** A new directory at this same position with its own overlay: reads
-   * fall through to this one, writes stay in the fork. */
+  /** A new directory at the empty path: the same names, its own entries.
+   * Reads fall through to this one, writes stay in the fork. */
   fork<Self>(this: Self, name?: string): Self;
 
-  /** Into this directory's overlay. Replaces what this directory had
+  /** Into this directory's own entries. Replaces what this directory had
    * there. A Handle is used as-is; anything else is wrapped in a new one. */
   mount(path: Path, what: unknown): void;
   /** Remove, and cut fall-through at that node — permanently, for this
@@ -57,15 +61,20 @@ export type Directory = {
    * opened or forked from it. Returns unregister. */
   serve(server: Server): () => void;
 
-  /** Release this directory and everything opened or forked from it. */
+  /** Import the module at `url` and run its default export here, sharing
+   * these entries, with its own lifetime. */
+  spawn(name: string, url: string): Process;
+
+  /** Release this directory: kill the processes running at it, then close
+   * everything opened or forked from it. */
   close(): void;
 };
 
-/** What answers requests. `target`: the names from the serving directory
- * to the node the walk is trying to reach; if it went through a link, the
- * first is the URL. `from`: the requester's overlay, seen from the serving
- * directory; anything opened through it belongs to the requester and
- * closes with it. */
+/** What answers requests. `target`: the missing path as it reads from the
+ * serving directory — the requester's path, grown by each level it
+ * climbed; through a link, the first name is the URL. `from`: the
+ * requester's entries, seen from the serving directory; anything opened
+ * through it belongs to the requester and closes with it. */
 export type Server = {
   /** An open found nothing there. Must return a promise; decline by
    * returning without mounting. */
@@ -76,6 +85,35 @@ export type Server = {
 
 export type Opened<T> = [T] extends [never] ? Directory : Directory & Handle<T>;
 
+/** What spawn runs: a module's default export. Returning ends nothing;
+ * closing `dir` does. */
+export type Main = (dir: Directory) => Promise<void> | void;
+
+/** A directory with a module running in it. */
+export type Process = {
+  readonly pid: string; // a UUID
+  readonly name: string;
+  /** The module spawn imported, e.g. "./tools/chat.tsx". */
+  readonly url: string;
+  /** Where it was spawned; nothing else leads there. */
+  readonly at: Directory;
+  /** What the default export received: the entries of `at`, an empty
+   * path, and its own lifetime. `children` is what it opened. `close()`
+   * kills; `signal` aborts then. */
+  readonly dir: Directory;
+  /** The default export's return. A failed import or a throw rejects it
+   * and kills. */
+  readonly terminated: Promise<void>;
+};
+
+/** The origin, and the only view of the process table. A fork of the root
+ * is a plain Directory: the table does not fork. */
+export type Root = Omit<Directory, "fork"> & {
+  fork(name?: string): Directory;
+  /** Every process running at or below this root. Read-only. */
+  readonly processes: Handle<Process[]>;
+};
+
 export class NotFound extends Error {
   constructor(readonly target: string[]) {
     super(`not found: ${target.join("/")}`);
@@ -83,8 +121,17 @@ export class NotFound extends Error {
   }
 }
 
-export function createDirectory(): Directory {
-  return new DirectoryImpl(undefined, [], "root") as unknown as Directory;
+export function createDirectory(options?: {
+  /** How spawn loads modules. The platform's import() by default. */
+  import?(url: string): Promise<{ default: Main }>;
+}): Root {
+  return new DirectoryImpl(
+    undefined,
+    [],
+    "root",
+    undefined,
+    options?.import
+  ) as unknown as Root;
 }
 
 type Held = { requester: DirectoryImpl; key: string };
@@ -93,14 +140,12 @@ type Fired = { key: string; target: string[] };
 export class DirectoryImpl {
   readonly [brand] = true;
   readonly name: string;
-  readonly overlay = new Overlay();
+  readonly overlay: Overlay;
   readonly parent: DirectoryImpl | undefined;
-  /** Position relative to parent, as requested — links are re-followed on
-   * every read, so a shadowed URL retargets everything downstream. */
-  readonly base: string[];
-  /** Absolute position: origin-rooted names, or URL-rooted once the chain
-   * went through a URL. */
-  readonly pos: string[];
+  /** The path this directory was opened at, relative to `parent` — `[]`
+   * for a fork or a process view. Links along it are re-followed on every
+   * read, so a shadowed URL retargets everything downstream. */
+  readonly path: string[];
 
   readonly entries: Handle<Entry[]>;
   readonly children: Handle<DirectoryImpl[]>;
@@ -111,20 +156,40 @@ export class DirectoryImpl {
   readonly pending = new Map<string, Promise<void>>();
   /** The value here moved — the Watch says when. */
   readonly changes = new Emitter();
+  /** Every process at or below here. Only read on the root. */
+  readonly processes: Handle<Process[]>;
 
   private readonly kids = new Set<DirectoryImpl>();
   private readonly kidsChanged = new Emitter();
   private readonly controller = new AbortController();
+  /** True unless this is a process view sharing its parent's overlay. */
+  private readonly ownsOverlay: boolean;
+  /** The process views running at this directory. */
+  private readonly spawned = new Set<DirectoryImpl>();
+  /** The table — only the root's is written to. */
+  private readonly table: Process[] = [];
+  private readonly tableChanged = new Emitter();
+  private readonly importer:
+    ((url: string) => Promise<{ default: Main }>) | undefined;
   private held: Held[] = [];
   private watch: Watch | undefined;
 
-  constructor(parent: DirectoryImpl | undefined, base: string[], name: string) {
+  constructor(
+    parent: DirectoryImpl | undefined,
+    path: string[],
+    name: string,
+    overlay?: Overlay,
+    importer?: (url: string) => Promise<{ default: Main }>
+  ) {
     this.parent = parent;
-    this.base = base;
+    this.path = path;
     this.name = name;
-    this.pos = !parent || isUrlRooted(base) ? base : [...parent.pos, ...base];
+    this.overlay = overlay ?? new Overlay();
+    this.ownsOverlay = !overlay;
+    this.importer = importer;
     this.entries = readonly(() => this.overlay.entries(), this.overlay.mutated);
     this.children = readonly(() => [...this.kids], this.kidsChanged);
+    this.processes = readonly(() => [...this.table], this.tableChanged);
   }
 
   // --- directory surface ---------------------------------------------------
@@ -162,15 +227,52 @@ export class DirectoryImpl {
     return () => this.servers.delete(server);
   }
 
+  spawn(name: string, url: string): Process {
+    this.assertOpen();
+    const view = new DirectoryImpl(this, [], name, this.overlay);
+    const dir = view as unknown as Directory;
+    const root = this.root();
+    const terminated = (async () => {
+      const mod = await root.load(url);
+      if (view.signal.aborted) return;
+      if (typeof mod?.default !== "function")
+        throw new TypeError(`no default export: ${url}`);
+      await mod.default(dir);
+    })();
+    const process: Process = {
+      pid: crypto.randomUUID(),
+      name,
+      url,
+      at: this as unknown as Directory,
+      dir,
+      terminated,
+    };
+    this.spawned.add(view);
+    root.table.push(process);
+    root.tableChanged.emit();
+    view.signal.addEventListener("abort", () => {
+      this.spawned.delete(view);
+      const index = root.table.indexOf(process);
+      if (index >= 0) {
+        root.table.splice(index, 1);
+        root.tableChanged.emit();
+      }
+    });
+    terminated.catch(() => view.close());
+    return process;
+  }
+
   close(): void {
     if (this.closed) return;
     this.controller.abort();
+    for (const view of [...this.spawned].reverse()) view.close();
     for (const child of [...this.kids].reverse()) child.close();
     this.kids.clear();
     this.watch?.stop();
     this.changes.clear();
     this.kidsChanged.clear();
-    this.overlay.mutated.clear();
+    this.tableChanged.clear();
+    if (this.ownsOverlay) this.overlay.mutated.clear();
     this.servers.clear();
     if (this.parent?.kids.delete(this)) this.parent.kidsChanged.emit();
     const held = this.held;
@@ -189,9 +291,9 @@ export class DirectoryImpl {
   // --- handle surface ------------------------------------------------------
 
   get value(): unknown {
-    const result = walk(this, this.pos);
+    const result = walk(this, []);
     if (result.kind !== "found" || !result.handle)
-      throw new NotFound(this.relTarget(result.at));
+      throw new NotFound(result.at);
     return result.handle.value;
   }
 
@@ -225,8 +327,7 @@ export class DirectoryImpl {
   // --- internals -----------------------------------------------------------
 
   async openRel(rel: string[]): Promise<DirectoryImpl> {
-    const abs = isUrlRooted(rel) ? rel : [...this.pos, ...rel];
-    const { fired } = await resolveWithFills(this, abs);
+    const { fired } = await resolveWithFills(this, rel);
     const child = this.adopt(new DirectoryImpl(this, rel, rel.join("/")));
     child.hold(this, fired);
     return child;
@@ -244,11 +345,18 @@ export class DirectoryImpl {
     }
   }
 
-  relTarget(abs: string[]): string[] {
-    if (isUrlRooted(abs)) return abs;
-    if (isUrlRooted(this.pos)) return abs;
-    const rel = abs.slice(this.pos.length);
-    return rel.length > 0 ? rel : abs;
+  root(): DirectoryImpl {
+    let dir: DirectoryImpl = this;
+    while (dir.parent) dir = dir.parent;
+    return dir;
+  }
+
+  private load(url: string): Promise<{ default: Main }> {
+    const importer =
+      this.importer ??
+      ((u: string) =>
+        import(/* @vite-ignore */ u) as Promise<{ default: Main }>);
+    return importer(url);
   }
 
   private get closed(): boolean {
@@ -262,9 +370,9 @@ export class DirectoryImpl {
   }
 
   private terminal(): Handle<unknown> {
-    const result = walk(this, this.pos);
+    const result = walk(this, []);
     if (result.kind !== "found" || !result.handle)
-      throw new NotFound(this.relTarget(result.at));
+      throw new NotFound(result.at);
     return result.handle;
   }
 
@@ -283,11 +391,11 @@ export class DirectoryImpl {
  * — go again. The same miss twice is NotFound. */
 async function resolveWithFills(
   requester: DirectoryImpl,
-  abs: string[]
+  rel: string[]
 ): Promise<{ result: Extract<WalkResult, { kind: "found" }>; fired: Fired[] }> {
   const fired: Fired[] = [];
   for (let attempt = 0; attempt < 32; attempt++) {
-    const result = walk(requester, abs);
+    const result = walk(requester, rel);
     if (result.kind === "found") return { result, fired };
     const key = JSON.stringify(result.at);
     const existing = requester.pending.get(key);
@@ -303,72 +411,77 @@ async function resolveWithFills(
       }
     }
     fired.push({ key, target: result.at });
-    const again = walk(requester, abs);
+    const again = walk(requester, rel);
     if (again.kind === "found") return { result: again, fired };
-    if (JSON.stringify(again.at) === key)
-      throw new NotFound(requester.relTarget(again.at));
+    if (JSON.stringify(again.at) === key) throw new NotFound(again.at);
   }
-  throw new NotFound(requester.relTarget(abs));
+  throw new NotFound(rel);
 }
 
+/** Climb from the requester, growing the target by each level's path —
+ * every server hears the miss as it reads from its own directory. */
 async function fireOpen(
   requester: DirectoryImpl,
-  absTarget: string[]
+  target: string[]
 ): Promise<void> {
   const calls: Promise<void>[] = [];
+  let cur = target;
   for (let dir: DirectoryImpl | undefined = requester; dir; dir = dir.parent) {
-    if (dir.servers.size === 0) continue;
-    const target = targetFor(dir, absTarget);
-    if (!target) continue;
-    const from = new FromView(requester, dir) as unknown as Directory;
-    for (const server of [...dir.servers]) {
-      if (!server.open) continue;
-      const out = server.open(target, from);
-      if (!out || typeof out.then !== "function")
-        throw new TypeError("open handler must return a promise");
-      calls.push(out);
+    if (dir.servers.size > 0) {
+      const from = new FromView(requester, dir) as unknown as Directory;
+      for (const server of [...dir.servers]) {
+        if (!server.open) continue;
+        const out = server.open(cur, from);
+        if (!out || typeof out.then !== "function")
+          throw new TypeError("open handler must return a promise");
+        calls.push(out);
+      }
     }
+    cur = isUrlRooted(cur) ? cur : [...dir.path, ...cur];
   }
   await Promise.all(calls);
 }
 
-function fireClose(requester: DirectoryImpl, absTarget: string[]): void {
+function fireClose(requester: DirectoryImpl, target: string[]): void {
+  let cur = target;
   for (let dir: DirectoryImpl | undefined = requester; dir; dir = dir.parent) {
-    if (dir.servers.size === 0) continue;
-    const target = targetFor(dir, absTarget);
-    if (!target) continue;
-    const from = new FromView(requester, dir) as unknown as Directory;
-    for (const server of [...dir.servers]) server.close?.(target, from);
+    if (dir.servers.size > 0) {
+      const from = new FromView(requester, dir) as unknown as Directory;
+      for (const server of [...dir.servers]) server.close?.(cur, from);
+    }
+    cur = isUrlRooted(cur) ? cur : [...dir.path, ...cur];
   }
 }
 
-function targetFor(dir: DirectoryImpl, abs: string[]): string[] | undefined {
-  if (isUrlRooted(abs)) return abs;
-  if (isUrlRooted(dir.pos)) return undefined;
-  return startsWith(abs, dir.pos) ? abs.slice(dir.pos.length) : undefined;
-}
-
-/** The requester's overlay, seen from a server's position: paths are
- * translated into the requester's coordinates, so fills land in the
- * requester's overlay and anything opened through it belongs to the
+/** The requester's entries, seen from a server's directory: paths are
+ * translated by the prefix between them — the concatenated paths of
+ * everything the requester hangs below the server — so fills land in the
+ * requester's own entries and anything opened through it belongs to the
  * requester and closes with it. */
 class FromView {
   readonly [brand] = true;
-  /** The requester's entries, in the server's coordinates where those
-   * exist; URL-rooted paths are the same everywhere. */
+  /** The requester's entries, in the server's coordinates; URL-rooted
+   * paths are the same everywhere. */
   readonly entries: Handle<Entry[]>;
+  /** The requester's position inside the serving directory. URL-rooted
+   * once a document boundary lies between them. */
+  private readonly prefix: string[];
 
   constructor(
     private readonly requester: DirectoryImpl,
-    private readonly server: DirectoryImpl
+    server: DirectoryImpl
   ) {
-    const prefix =
-      isUrlRooted(server.pos) || isUrlRooted(requester.pos)
-        ? []
-        : requester.pos.slice(server.pos.length);
+    let prefix: string[] = [];
+    for (
+      let dir: DirectoryImpl | undefined = requester;
+      dir && dir !== server;
+      dir = dir.parent
+    )
+      if (!isUrlRooted(prefix)) prefix = [...dir.path, ...prefix];
+    this.prefix = prefix;
     this.entries = derive(requester.entries, (entries) =>
       entries.map(({ path, handle }) => ({
-        path: isUrlRooted(path) ? path : [...prefix, ...path],
+        path: isUrlRooted(path) ? path : [...this.prefix, ...path],
         handle,
       }))
     );
@@ -408,6 +521,10 @@ class FromView {
     return this.requester.serve(server);
   }
 
+  spawn(name: string, url: string): Process {
+    return this.requester.spawn(name, url);
+  }
+
   close(): void {
     // The requester's lifetime is the requester's business.
   }
@@ -431,12 +548,9 @@ class FromView {
   private rel(path: Path): string[] {
     const names = parsePath(path);
     if (isUrlRooted(names)) return names;
-    if (isUrlRooted(this.server.pos) || isUrlRooted(this.requester.pos))
+    if (isUrlRooted(this.prefix) || !startsWith(names, this.prefix))
       throw new Error("fill outside the requester's subtree");
-    const abs = [...this.server.pos, ...names];
-    if (!startsWith(abs, this.requester.pos))
-      throw new Error("fill outside the requester's subtree");
-    return abs.slice(this.requester.pos.length);
+    return names.slice(this.prefix.length);
   }
 }
 
@@ -481,10 +595,7 @@ class Watch {
     this.handleFired = false;
     let terminal: Handle<unknown> | undefined;
     try {
-      const { result, fired: requests } = await resolveWithFills(
-        this.dir,
-        this.dir.pos
-      );
+      const { result, fired: requests } = await resolveWithFills(this.dir, []);
       if (generation !== this.generation || this.stopped) return;
       this.dir.hold(this.dir, requests);
       terminal = result.handle;
@@ -500,7 +611,7 @@ class Watch {
 
   private safeWalk(): WalkResult | undefined {
     try {
-      return walk(this.dir, this.dir.pos);
+      return walk(this.dir, []);
     } catch {
       return undefined;
     }

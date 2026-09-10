@@ -1,21 +1,25 @@
-/** Resolution: `locate` is the structural lookup across the chain of
- * overlays a directory falls through to; `walk` runs it and follows
+/** Resolution, as the spec's Resolution section states it: a directory is
+ * its own entries, the directory it came from, and the path it was opened
+ * at there. `locate` is the structural lookup — own entries first, then
+ * the parent asked for `path + rel` — and `walk` runs it and follows
  * links — a handle whose value is a URL string — restarting from the
- * requester each hop, with a hop limit. */
+ * requester each hop, with a hop limit. Nothing here holds an absolute
+ * path. */
 
 import type { Handle } from "./handle";
 import type { Overlay } from "./overlay";
-import { hasScheme, isUrlRooted, parsePath, startsWith } from "./path";
+import { hasScheme, isUrlRooted, parsePath } from "./path";
 
-/** What walk needs of a directory: its overlay, its chain, its absolute
- * position (origin-rooted names, or URL-rooted once any hop went through
- * a URL). */
+/** What walk needs of a directory: its entries, the directory it came
+ * from, and the path it was opened at there — `[]` for a fork. */
 export type ChainNode = {
   overlay: Overlay;
   parent: ChainNode | undefined;
-  pos: string[];
+  path: string[];
 };
 
+/** `at` is in the requester's coordinates — or URL-rooted, once a link
+ * was followed; a URL reads the same at every level. */
 export type WalkResult =
   | {
       kind: "found";
@@ -27,9 +31,9 @@ export type WalkResult =
 
 const HOP_LIMIT = 32;
 
-export function walk(start: ChainNode, abs: string[]): WalkResult {
+export function walk(start: ChainNode, rel: string[]): WalkResult {
   const crossed: Handle<unknown>[] = [];
-  let cur = abs;
+  let cur = rel;
   for (let hops = 0; hops <= HOP_LIMIT; hops++) {
     const found = locate(start, cur);
     if (found.handle) {
@@ -44,50 +48,67 @@ export function walk(start: ChainNode, abs: string[]): WalkResult {
     if (found.hasEntries)
       return { kind: "found", at: cur, handle: undefined, crossed };
     // Structure ran out. Follow a link at the longest prefix that has one.
-    let followed = false;
-    for (let j = cur.length - 1; j >= 1; j--) {
-      const prefix = locate(start, cur.slice(0, j));
-      if (prefix.handle) {
-        const link = linkTarget(prefix.handle);
-        if (link) {
-          crossed.push(prefix.handle);
-          cur = [...link, ...cur.slice(j)];
-          followed = true;
-        }
-        break;
-      }
-      if (prefix.hasEntries) break;
-    }
-    if (!followed) return { kind: "miss", at: cur, crossed };
+    const hop = followableLink(start, cur, crossed);
+    if (!hop) return { kind: "miss", at: cur, crossed };
+    cur = hop;
   }
   throw new Error(`link loop at ${cur.join("/")}`);
 }
 
+/** The structural lookup: own entries at `rel`; a cut stops the climb;
+ * otherwise the parent is asked for `path + rel`. URL-rooted paths climb
+ * unchanged — a URL reads the same at every level. */
 export function locate(
   start: ChainNode,
-  abs: string[]
+  rel: string[]
 ): { handle: Handle<unknown> | undefined; hasEntries: boolean } {
   let hasEntries = false;
+  let cur = rel;
   for (let dir: ChainNode | undefined = start; dir; dir = dir.parent) {
-    const local = toLocal(abs, dir);
-    if (local) {
-      const found = dir.overlay.lookup(local);
-      if (found.handle)
-        return {
-          handle: found.handle,
-          hasEntries: hasEntries || found.hasEntries,
-        };
-      hasEntries ||= found.hasEntries;
-      if (found.cutBlocked) break;
-    }
+    const found = dir.overlay.lookup(cur);
+    if (found.handle)
+      return {
+        handle: found.handle,
+        hasEntries: hasEntries || found.hasEntries,
+      };
+    hasEntries ||= found.hasEntries;
+    if (found.cutBlocked) break;
+    cur = isUrlRooted(cur) ? cur : [...dir.path, ...cur];
   }
   return { handle: undefined, hasEntries };
 }
 
-function toLocal(abs: string[], dir: ChainNode): string[] | undefined {
-  if (isUrlRooted(abs)) return abs;
-  if (isUrlRooted(dir.pos)) return undefined;
-  return startsWith(abs, dir.pos) ? abs.slice(dir.pos.length) : undefined;
+/** The longest prefix of the path that holds a link, walked outward: the
+ * prefixes of `cur` here first (down to the requester's own node), then,
+ * climbing, the positions the path grows through inside each ancestor.
+ * The first position holding anything decides: a link is followed — the
+ * remainder appended to its URL — and a plain value or entries block the
+ * search. Once the path is URL-rooted there is nothing new above. */
+function followableLink(
+  start: ChainNode,
+  cur: string[],
+  crossed: Handle<unknown>[]
+): string[] | undefined {
+  let dir: ChainNode | undefined = start;
+  let p = cur;
+  let top = p.length - 1;
+  while (dir) {
+    for (let j = top; j >= (isUrlRooted(p) ? 1 : 0); j--) {
+      const prefix = locate(dir, p.slice(0, j));
+      if (prefix.handle) {
+        const link = linkTarget(prefix.handle);
+        if (!link) return undefined;
+        crossed.push(prefix.handle);
+        return [...link, ...p.slice(j)];
+      }
+      if (prefix.hasEntries) return undefined;
+    }
+    if (isUrlRooted(p)) return undefined;
+    top = dir.path.length - 1;
+    p = [...dir.path, ...p];
+    dir = dir.parent;
+  }
+  return undefined;
 }
 
 function linkTarget(handle: Handle<unknown>): string[] | undefined {
