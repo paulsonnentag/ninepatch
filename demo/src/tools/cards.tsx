@@ -3,18 +3,18 @@ import { render } from "solid-js/web";
 import type { Handle, Directory } from "@ninepatch/core";
 import type { CanvasDoc } from "../types";
 
-export default async function Canvas(dir: Directory) {
+export default async function Cards(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<CanvasDoc>("doc");
   const selection = await dir.open<string | null>("selection");
   const dispose = render(
-    () => <Cards doc={doc} selection={selection} />,
+    () => <Board doc={doc} selection={selection} />,
     dom.value
   );
   dir.signal.addEventListener("abort", dispose);
 }
 
-function Cards(props: {
+function Board(props: {
   doc: Handle<CanvasDoc>;
   selection: Handle<string | null>;
 }) {
@@ -30,19 +30,27 @@ function Cards(props: {
         title: "somewhere new",
       };
     });
+  /** Typing a location geocodes it: the coordinates land in the card. */
+  const locate = async (id: string, query: string) => {
+    const coords = await geocode(query);
+    if (!coords) return;
+    change((d) => {
+      const card = d.cards[id];
+      if (card) {
+        card.lat = coords.lat;
+        card.lng = coords.lng;
+      }
+    });
+  };
 
   return (
-    <div class="canvas">
+    <>
       <button class="add" onClick={add}>
         add card
       </button>
       <For each={Object.keys(state().cards)}>
         {(id) => {
           const card = () => state().cards[id];
-          const number = (raw: string) => {
-            const value = parseFloat(raw);
-            return Number.isFinite(value) ? value : undefined;
-          };
           const drag = (down: PointerEvent) => {
             const target = down.target as HTMLElement;
             if (target.tagName === "INPUT" || target.tagName === "BUTTON")
@@ -79,6 +87,7 @@ function Cards(props: {
             >
               <input
                 class="title"
+                placeholder="type a place"
                 value={card()?.title ?? ""}
                 onInput={(e) =>
                   change(
@@ -89,44 +98,40 @@ function Cards(props: {
                       )
                   )
                 }
+                onChange={(e) => void locate(id, e.currentTarget.value)}
               />
-              <Show when={selected() === id}>
-                <div class="coords">
-                  <input
-                    placeholder="lat"
-                    value={card()?.lat ?? ""}
-                    onChange={(e) =>
-                      change((d) => {
-                        const v = number(e.currentTarget.value);
-                        if (d.cards[id]) {
-                          if (v === undefined) delete d.cards[id].lat;
-                          else d.cards[id].lat = v;
-                        }
-                      })
-                    }
-                  />
-                  <input
-                    placeholder="lng"
-                    value={card()?.lng ?? ""}
-                    onChange={(e) =>
-                      change((d) => {
-                        const v = number(e.currentTarget.value);
-                        if (d.cards[id]) {
-                          if (v === undefined) delete d.cards[id].lng;
-                          else d.cards[id].lng = v;
-                        }
-                      })
-                    }
-                  />
-                  <button onClick={() => change((d) => delete d.cards[id])}>
-                    delete
-                  </button>
+              <Show when={card()?.lat !== undefined}>
+                <div class="latlng">
+                  {card()!.lat!.toFixed(2)}, {card()!.lng!.toFixed(2)}
                 </div>
+              </Show>
+              <Show when={selected() === id}>
+                <button
+                  class="remove"
+                  onClick={() => change((d) => delete d.cards[id])}
+                >
+                  delete
+                </button>
               </Show>
             </div>
           );
         }}
       </For>
-    </div>
+    </>
   );
+}
+
+async function geocode(
+  query: string
+): Promise<{ lat: number; lng: number } | undefined> {
+  if (!query.trim()) return undefined;
+  const res = await fetch(
+    `https://photon.komoot.io/api/?q=${encodeURIComponent(query.trim())}&limit=1`
+  );
+  if (!res.ok) return undefined;
+  const json = await res.json();
+  const feature = json.features?.[0];
+  if (!feature) return undefined;
+  const [lng, lat] = feature.geometry.coordinates as [number, number];
+  return { lat, lng };
 }

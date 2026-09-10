@@ -1,5 +1,5 @@
-import { For, from } from "solid-js";
-import { render } from "solid-js/web";
+import { Map as LibreMap, Marker } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { Directory } from "@ninepatch/core";
 import type { Place } from "../types";
 
@@ -8,55 +8,56 @@ export default async function MapView(dir: Directory) {
   const places = await dir.open<Place[]>("places");
   const selection = await dir.open<string | null>("selection");
 
-  const dispose = render(() => {
-    const pins = from(places, places.value);
-    const selected = from(selection, selection.value);
-    return (
-      <svg class="map" viewBox="0 0 360 180">
-        <For each={CONTINENTS}>
-          {(poly) => (
-            <polygon
-              class="land"
-              points={poly
-                .map(([lat, lng]) => `${lng + 180},${90 - lat}`)
-                .join(" ")}
-            />
-          )}
-        </For>
-        <For each={pins()}>
-          {(place) => (
-            <g
-              class="pin"
-              classList={{ selected: selected() === place.id }}
-              transform={`translate(${place.lng + 180}, ${90 - place.lat})`}
-              onClick={() => selection.set(place.id)}
-            >
-              <circle class="hit" r="8" />
-              <circle r="3" />
-              <text y="-5">{place.title}</text>
-            </g>
-          )}
-        </For>
-      </svg>
-    );
-  }, dom.value);
-  dir.signal.addEventListener("abort", dispose);
+  const frame = dom.value.appendChild(document.createElement("div"));
+  frame.className = "map-frame"; // the box on the board; maplibre owns the inside
+  const el = frame.appendChild(document.createElement("div"));
+  el.className = "map";
+  const map = new LibreMap({
+    style: "https://tiles.openfreemap.org/styles/liberty",
+    center: [13.388, 52.517],
+    zoom: 9.5,
+    container: el,
+  });
+
+  // one marker per place, kept in step with the derived list
+  const markers = new Map<string, Marker>();
+  const highlight = () => {
+    for (const [id, marker] of markers)
+      marker.getElement().classList.toggle("selected", selection.value === id);
+  };
+  const unsubPlaces = places.subscribe((list) => {
+    const seen = new Set<string>();
+    for (const place of list) {
+      seen.add(place.id);
+      let marker = markers.get(place.id);
+      if (!marker) {
+        const pin = document.createElement("button");
+        pin.className = "pin";
+        pin.addEventListener("click", () => selection.set(place.id));
+        marker = new Marker({ element: pin })
+          .setLngLat([place.lng, place.lat])
+          .addTo(map);
+        markers.set(place.id, marker);
+      } else marker.setLngLat([place.lng, place.lat]);
+      marker.getElement().title = place.title;
+    }
+    for (const [id, marker] of markers)
+      if (!seen.has(id)) {
+        marker.remove();
+        markers.delete(id);
+      }
+    highlight();
+  });
+  const unsubSelection = selection.subscribe(() => {
+    highlight();
+    const place = places.value.find((p) => p.id === selection.value);
+    if (place) map.flyTo({ center: [place.lng, place.lat], zoom: 9.5 });
+  });
+
+  dir.signal.addEventListener("abort", () => {
+    unsubPlaces();
+    unsubSelection();
+    map.remove();
+    frame.remove();
+  });
 }
-
-// Rough low-poly continents, [lat, lng] vertices. Recognizable, not accurate.
-
-// prettier-ignore
-const CONTINENTS: [number, number][][] = [
-  // North America
-  [[71, -160], [70, -110], [62, -70], [47, -52], [30, -80], [18, -95], [22, -106], [32, -117], [55, -160]],
-  // Greenland
-  [[83, -40], [76, -20], [60, -44], [76, -70]],
-  // South America
-  [[12, -72], [5, -50], [-8, -35], [-35, -55], [-55, -70], [-18, -71], [0, -80]],
-  // Africa
-  [[35, -8], [32, 32], [12, 44], [-2, 42], [-35, 20], [-17, 12], [5, -10], [15, -18]],
-  // Eurasia
-  [[36, -10], [58, -5], [71, 25], [77, 105], [66, 180], [55, 158], [35, 122], [22, 108], [8, 100], [24, 62], [30, 34], [38, 12]],
-  // Australia
-  [[-12, 131], [-20, 148], [-38, 147], [-33, 116], [-21, 114]],
-];

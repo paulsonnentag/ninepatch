@@ -76,13 +76,12 @@ async function findOrCreateSeed(): Promise<Seed> {
         somewhere: { x: 120, y: 190, title: "Somewhere" },
       },
     });
+    const notes2 = repo.create<MarkdownDoc>({ content: "" });
     const notes = repo.create<MarkdownDoc>({
-      content:
-        "# Notes\n\nType here. Open the page in a second tab and type there too.\n",
+      content: `# Notes\n\nType here. Open the page in a second tab and type there too.\n\nMore in [the second document](/${notes2.url}).\n`,
     });
-    const notes2 = repo.create<MarkdownDoc>({
-      content:
-        "# The second document\n\nSwitch back and forth with the buttons or the bar.\n",
+    notes2.change((d) => {
+      d.content = `# The second document\n\nSwitch back and forth with the bar or the link back to [notes](/${notes.url}).\n`;
     });
     const folder = repo.create<Folder>({
       chat: chat.url,
@@ -104,6 +103,17 @@ async function findOrCreateSeed(): Promise<Seed> {
     folder.change((d) => (d.todos = todos.url));
   }
   const docs = folder.doc();
+  const notes = await repo.find<MarkdownDoc>(docs.notes as AnyDocumentId);
+  if (!notes.doc().content.includes("/automerge:")) {
+    // seeded before the notes linked to each other
+    const notes2 = await repo.find<MarkdownDoc>(docs.notes2 as AnyDocumentId);
+    notes.change((d) => {
+      d.content += `\nMore in [the second document](/${docs.notes2}).\n`;
+    });
+    notes2.change((d) => {
+      d.content += `\nBack to [notes](/${docs.notes}).\n`;
+    });
+  }
   return {
     url,
     todos: docs.todos,

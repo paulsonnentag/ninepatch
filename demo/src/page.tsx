@@ -7,10 +7,9 @@
 
 import { frame, moduleUrl, seed } from "./boot";
 import { Mount, Section } from "./harness";
-import type { Route } from "./types";
 import todosSource from "./tools/todos.tsx?raw";
 import chatSource from "./tools/chat.tsx?raw";
-import canvasSource from "./tools/canvas.tsx?raw";
+import cardsSource from "./tools/cards.tsx?raw";
 import mapSource from "./tools/map.tsx?raw";
 import placesSource from "./tools/places.ts?raw";
 import routeSource from "./tools/route.ts?raw";
@@ -23,13 +22,13 @@ const todos = frame.fork("todos");
 
 const chat = frame.fork("chat");
 
-const places = frame.fork("places");
-places.mount("selection", null as string | null); // a plain value; never touches a document
-await places.spawn("Places", moduleUrl("places.ts")).terminated; // mounts `places`, derived from the canvas
+const root = frame.fork("root"); // "root" loosely: the canvas section's world
+root.mount("selection", null as string | null); // a plain value; never touches a document
+await root.spawn("Places", moduleUrl("places.ts")).terminated; // mounts `places`, derived from the cards
+const selection = await root.open<string | null>("selection"); // the host clears it on board clicks
 
-const url = frame.fork("url");
-await url.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `location` and `selectedDoc`
-const location = await url.open<Route>("location"); // for the buttons below
+const browser = frame.fork("browser");
+await browser.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `url` and `selectedDoc`
 
 // --- the page -----------------------------------------------------------------
 
@@ -96,33 +95,40 @@ export function Page() {
 
       <Section
         title="Canvas and map"
-        chain={[frame, places]}
+        chain={[frame, root]}
         sources={[
-          { name: "canvas.tsx", code: canvasSource },
+          { name: "cards.tsx", code: cardsSource },
           { name: "map.tsx", code: mapSource },
           { name: "places.ts", code: placesSource },
         ]}
         prose={
           <p>
-            The canvas edits a document of cards, a <code>Places</code> process
-            derives <code>places</code> from it, and the map draws a pin per
-            place and shares a <code>selection</code> entry with the canvas, so
-            clicking on either side highlights the other.
+            Location cards and a real map share one canvas and one{" "}
+            <code>selection</code> entry, a <code>Places</code> process derives{" "}
+            <code>places</code> from the cards document, and typing a place into
+            a card geocodes it onto the map.
           </p>
         }
       >
-        <Mount
-          dir={places}
-          name="Canvas"
-          url={moduleUrl("canvas.tsx")}
-          mount={{ doc: seed.canvas }}
-        />
-        <Mount dir={places} name="Map" url={moduleUrl("map.tsx")} />
+        <div
+          class="board"
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) selection.set(null); // beside the cards: clear
+          }}
+        >
+          <Mount dir={root} name="Map" url={moduleUrl("map.tsx")} />
+          <Mount
+            dir={root}
+            name="Cards"
+            url={moduleUrl("cards.tsx")}
+            mount={{ doc: seed.canvas }}
+          />
+        </div>
       </Section>
 
       <Section
         title="The URL is a text field"
-        chain={[frame, url]}
+        chain={[frame, browser]}
         sources={[
           { name: "route.ts", code: routeSource },
           { name: "urlbar.tsx", code: urlbarSource },
@@ -130,21 +136,13 @@ export function Page() {
         ]}
         prose={
           <p>
-            A <code>Route</code> process keeps the route in the directory as{" "}
-            <code>location</code>, remembered in local storage, and{" "}
-            <code>selectedDoc</code> is a link derived from it that the editor
-            follows wherever the buttons or the bar point it.
+            A <code>Route</code> process keeps the part after the host in the
+            directory as <code>url</code> and mounts <code>selectedDoc</code> as
+            a two-way lens over it, so the bar only ever writes the url, the
+            editor only ever rebinds the doc, and each follows the other.
           </p>
         }
       >
-        <div class="row">
-          <button onClick={() => location.set({ docUrl: seed.notes })}>
-            notes
-          </button>
-          <button onClick={() => location.set({ docUrl: seed.notes2 })}>
-            notes2
-          </button>
-        </div>
         <div class="browser">
           <div class="browser-chrome">
             <span class="browser-dots">
@@ -152,10 +150,14 @@ export function Page() {
               <i />
               <i />
             </span>
-            <Mount dir={url} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
+            <Mount dir={browser} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
           </div>
           <div class="browser-page">
-            <Mount dir={url} name="Markdown" url={moduleUrl("markdown.tsx")} />
+            <Mount
+              dir={browser}
+              name="Markdown"
+              url={moduleUrl("markdown.tsx")}
+            />
           </div>
         </div>
       </Section>

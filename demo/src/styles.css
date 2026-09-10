@@ -973,10 +973,10 @@ body.resizing {
   min-width: 0;
 }
 
-/* canvas + map */
-.canvas {
+/* one canvas: the cards and the map are separate processes on one board */
+.board {
   position: relative;
-  height: 300px;
+  height: 420px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background:
@@ -984,14 +984,18 @@ body.resizing {
     linear-gradient(#f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
     white;
   overflow: hidden;
-  margin-bottom: 1rem;
   touch-action: none;
 }
 
-.canvas .add {
+/* the tools' slots dissolve so their pieces sit on the board itself */
+.board > .tool {
+  display: contents;
+}
+
+.board .add {
   position: absolute;
-  right: 0.5rem;
-  top: 0.5rem;
+  left: 0.5rem;
+  bottom: 0.5rem;
   z-index: 2;
 }
 
@@ -1005,6 +1009,7 @@ body.resizing {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   cursor: grab;
   user-select: none;
+  z-index: 1;
 }
 
 .card.selected {
@@ -1019,58 +1024,51 @@ body.resizing {
   font-weight: 600;
 }
 
-.card .coords {
-  display: flex;
-  gap: 0.25rem;
+.card .latlng {
+  margin-top: 0.2rem;
+  font:
+    0.7rem ui-monospace,
+    monospace;
+  color: var(--faint);
+}
+
+.card .remove {
   margin-top: 0.3rem;
-}
-
-.card .coords input {
-  width: 3.5rem;
-  font-size: 0.75rem;
-}
-
-.card .coords button {
   font-size: 0.7rem;
+}
+
+/* the map is a maplibre box on the board */
+.map-frame {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 46%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef6fb;
 }
 
 .map {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #eef6fb;
-  display: block;
+  height: 100%;
 }
 
-.map .land {
-  fill: #dfe8dc;
-  stroke: #b9c8b4;
-  stroke-width: 0.4;
-  pointer-events: none;
-}
-
-.map .pin circle {
-  fill: #e11d48;
-  stroke: #fff;
-  stroke-width: 0.7;
+.map .pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #e11d48;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   cursor: pointer;
+  padding: 0;
 }
 
-.map .pin .hit {
-  fill: transparent;
-  stroke: none;
-}
-
-.map .pin text {
-  font-size: 6px;
-  text-anchor: middle;
-  fill: #333;
-  pointer-events: none;
-}
-
-.map .pin.selected circle {
-  fill: var(--accent);
-  r: 4.5;
+.map .pin.selected {
+  background: var(--accent);
+  transform: scale(1.25);
 }
 
 /* the url example: a little browser — chrome bar with the url pill, the
@@ -1139,6 +1137,13 @@ body.resizing {
 
 .editor .cm-editor {
   height: 260px;
+}
+
+/* the little link plugin: /automerge:… in a note is clickable */
+.cm-doclink {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 input,

@@ -13,7 +13,6 @@ export type Card = {
 export type CanvasDoc = { cards: Record<string, Card> };
 export type Place = { id: string; title: string; lat: number; lng: number };
 export type MarkdownDoc = { content: string };
-export type Route = { docUrl: string };
 export type Folder = Record<string, string>;
 
 export type Seed = {

@@ -20,6 +20,7 @@
     "@ninepatch/codemirror": "workspace:*",
     "@ninepatch/core": "workspace:*",
     "codemirror": "^6.0.1",
+    "maplibre-gl": "^6.9.0",
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
