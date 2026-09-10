@@ -5,7 +5,7 @@
   --line: #ddd;
   --accent: #2f6fed;
   --selection: #2f6fed;
-  --pane: #f4f4f6; /* the three panes' background */
+  --pane: #f8f8f9; /* the three panes' background */
 }
 
 * {
@@ -821,6 +821,7 @@ body.resizing {
 .chat {
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: white;
   display: flex;
   flex-direction: column;
   height: 260px;
@@ -864,8 +865,9 @@ body.resizing {
   border: 1px solid var(--line);
   border-radius: 8px;
   background:
-    linear-gradient(90deg, #f4f4f4 1px, transparent 1px) 0 0 / 24px 24px,
-    linear-gradient(#f4f4f4 1px, transparent 1px) 0 0 / 24px 24px;
+    linear-gradient(90deg, #f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(#f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    white;
   overflow: hidden;
   margin-bottom: 1rem;
   touch-action: none;
@@ -965,13 +967,14 @@ body.resizing {
   padding: 0.45rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 99px;
-  background: #f6f6f6;
+  background: white;
   margin-bottom: 0.75rem;
 }
 
 .editor {
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: white;
   overflow: hidden;
 }
 
