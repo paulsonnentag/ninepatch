@@ -50,7 +50,9 @@ you can ask about names below you.
 ### Handles
 
 Everything in a directory is a handle: a live grip on a value. `value` is
-the current value; `set` replaces it and `change` edits it in place;
+the current value; `set` replaces it and `change` edits it in place — on a
+name whose value is a link, `set` rebinds the name while `change` edits
+the target (see Links are handles);
 `subscribe(fn)` calls `fn` now and after every change. That is the store
 contract Svelte defined, so a handle drops straight into Solid's `from()`
 or Svelte's `$store`. Mount a plain value — a DOM element, an object — and
@@ -235,7 +237,8 @@ class NotFound extends Error { readonly target: string[] }
 
 function fromDoc<T>(doc: DocHandle<T>, options?: { readOnly?: boolean }): Handle<T>
 function field<T>(source: Handle<unknown>, path: string[]): Handle<T>   // writes through source.change
-function derive<A, B>(source: Handle<A>, fn: (a: A) => B): Handle<B>
+/** Read-only unless `write` is given — then a two-way lens over the source. */
+function derive<A, B>(source: Handle<A>, fn: (a: A) => B, write?: (b: B) => void): Handle<B>
 ```
 
 ```ts
@@ -388,20 +391,26 @@ const rootFolder = await account.open<FolderDoc>("rootFolder")   // URL field: f
 
 ### Links are handles
 
-Opening `rootFolder` follows it. The link itself is a field of the parent.
+Opening `rootFolder` follows it. The link itself is a field of the parent,
+and reads and writes split the way symlinks do: `set` on the opened name
+rebinds the link — `ln -sf` — while `change` writes through to the target.
 
 ```ts
 account.value.rootFolder                                     // "automerge:rf…#h1"
-account.change((d) => { d.rootFolder = "automerge:other…" }) // switches everywhere
+rootFolder.set("automerge:other…")                           // rebinds: the account's field changes
+rootFolder.change((d) => { d.name = "renamed" })             // edits the folder it points at
 ```
 
-A derived handle holding a URL is a live link:
+A derived handle holding a URL is a live link, and given a write it is a
+two-way lens: whoever mounts it owns the encoding, and a `set` on the link
+flows back through the source.
 
 ```ts
-const location = await page.open<Route>("location")
-page.mount("selectedDoc", derive(location, (l) => l.docUrl))
+const url = await page.open<string>("url")                   // "/automerge:doc…" — the encoded route
+page.mount("selectedDoc", derive(url, (u) => u.slice(1), (doc) => url.set(`/${doc}`)))
 const selected = await page.open<Doc>("selectedDoc")
-selected.subscribe(show)                               // called again when location changes
+selected.subscribe(show)                                     // called again when url changes
+selected.set("automerge:other…")                             // rebinds through the lens: url follows
 ```
 
 ### A component is a process

@@ -31,13 +31,21 @@ export type WalkResult =
 
 const HOP_LIMIT = 32;
 
-export function walk(start: ChainNode, rel: string[]): WalkResult {
+export function walk(
+  start: ChainNode,
+  rel: string[],
+  options: { followLast?: boolean } = {}
+): WalkResult {
   const crossed: Handle<unknown>[] = [];
   let cur = rel;
   for (let hops = 0; hops <= HOP_LIMIT; hops++) {
     const found = locate(start, cur);
     if (found.handle) {
-      const link = linkTarget(found.handle);
+      // A link found here sits at the end of the path — `followLast:
+      // false` stops on the link entry itself instead of crossing it,
+      // which is how `set` rebinds a link rather than write through it.
+      const link =
+        options.followLast === false ? undefined : linkTarget(found.handle);
       if (link) {
         crossed.push(found.handle);
         cur = link;

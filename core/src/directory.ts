@@ -298,7 +298,9 @@ export class DirectoryImpl {
   }
 
   set(next: unknown): void {
-    this.terminal().set(next);
+    // Stop on a link at the end of the path: `set` rebinds the name —
+    // like `ln -sf` — while `change` writes through to the target.
+    this.terminal({ followLast: false }).set(next);
   }
 
   change(fn: (value: unknown) => void): void {
@@ -369,8 +371,8 @@ export class DirectoryImpl {
     return child;
   }
 
-  private terminal(): Handle<unknown> {
-    const result = walk(this, []);
+  private terminal(options: { followLast?: boolean } = {}): Handle<unknown> {
+    const result = walk(this, [], options);
     if (result.kind !== "found" || !result.handle)
       throw new NotFound(result.at);
     return result.handle;

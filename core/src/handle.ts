@@ -124,18 +124,21 @@ export function field<T>(source: Handle<unknown>, path: string[]): Handle<T> {
   };
 }
 
-/** A read-only handle computed from another. */
+/** A handle computed from another. Read-only unless `write` is given —
+ * then `set` goes through it, a two-way lens over the source. */
 export function derive<A, B>(
   source: Handle<A>,
-  fn: (value: A) => B
+  fn: (value: A) => B,
+  write?: (next: B) => void
 ): Handle<B> {
   return {
     [brand]: true,
     get value() {
       return fn(source.value);
     },
-    set() {
-      throw new Error("read-only handle");
+    set(next: B) {
+      if (!write) throw new Error("read-only handle");
+      write(next);
     },
     change() {
       throw new Error("read-only handle");
