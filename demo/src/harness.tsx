@@ -1,12 +1,15 @@
-/** The page furniture: a section is prose plus three panels — the live
- * example, the code behind it in tabs, and the namespaces it runs in,
- * drawn as a tree with a table per node. */
+/** The page furniture: the host side of a tool (`Mount`), and a section —
+ * prose plus three panels: the live example, the code behind it in tabs,
+ * and the namespaces it runs in, drawn as a tree with a table per node.
+ * Handles feed Solid through `from()`: a handle is a store. */
 
 import {
   createMemo,
+  createResource,
   createSignal,
   ErrorBoundary,
   For,
+  from,
   onCleanup,
   Show,
   type Accessor,
@@ -18,17 +21,36 @@ import {
   type Handle,
   type Namespace,
 } from "@ninepatch/core";
-import {
-  createChildren,
-  createEntries,
-  createOpen,
-  createValue,
-} from "@ninepatch/solid";
 import { javascript } from "@codemirror/lang-javascript";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { RawEditor } from "./raw-editor";
+import type { Tool } from "./types";
 
 export type Source = { name: string; code: string };
+
+/** The host side of a tool, spelled out: fork the section's namespace
+ * under `name`, mount what the tool should see plus this element as
+ * `dom`, run it, close on cleanup. A tool that rejects — an entry it
+ * needed isn't there — says so in its slot. */
+export function Mount(props: {
+  ns: Namespace;
+  name: string;
+  tool: Tool;
+  mount?: Record<string, unknown>;
+  unmount?: string[];
+}) {
+  const ns = props.ns.fork(props.name);
+  const el = (<div class="tool" />) as HTMLDivElement;
+  for (const [path, what] of Object.entries(props.mount ?? {}))
+    ns.mount(path, what);
+  for (const path of props.unmount ?? []) ns.unmount(path);
+  ns.mount("dom", el);
+  props.tool(ns).catch((e: unknown) => {
+    if (!ns.signal.aborted) el.textContent = String(e);
+  });
+  onCleanup(() => ns.close());
+  return el;
+}
 
 /** A section: title and prose at reading width, then a band across the
  * whole page — preview | code | namespace — with draggable dividers between
@@ -165,7 +187,7 @@ function ContextTree(props: { ns: Namespace; depth?: number }) {
   const probe = tryFork(props.ns);
   onCleanup(() => probe?.close());
   const entries = createStableEntries(props.ns);
-  const all = createChildren(props.ns);
+  const all = from(props.ns.children, props.ns.children.value);
   const children = () => all().filter((c) => c !== probe);
   const transparent = () => depth > 0 && entries().length === 0;
   const label = () => props.ns.name.split("/").map(shorten).join("/");
@@ -288,7 +310,7 @@ function Value(props: {
   expanded: boolean;
   slot: "summary" | "editor";
 }) {
-  const value = createValue(props.handle);
+  const value = from(props.handle, readValue(props.handle));
   const isLink = () =>
     typeof value() === "string" && hasScheme(value() as string);
   return (
@@ -322,23 +344,33 @@ function Value(props: {
   );
 }
 
+/** Opens the path through the probe — a resource, so NotFound reaches the
+ * <ErrorBoundary> above — and closes what it opened when the row goes. */
 function Linked(props: {
   url: string;
   path: string[];
   probe: Namespace;
   slot: "summary" | "editor";
 }) {
-  const opened = createOpen<unknown>(props.path, props.probe);
-  const target = createValue(opened);
+  let held: Namespace | undefined;
+  const [opened] = createResource(
+    async () => (held = await props.probe.open<unknown>(props.path))
+  );
+  onCleanup(() => held?.close());
   return (
     <Show when={opened()} fallback={<i class="loading">…</i>}>
-      <Show
-        when={props.slot === "editor"}
-        fallback={<Summary value={target()} />}
-      >
-        <CopyUrl url={props.url} />
-        <RawEditor handle={opened()!} />
-      </Show>
+      {(target) => {
+        const value = from(target(), readValue(target()));
+        return (
+          <Show
+            when={props.slot === "editor"}
+            fallback={<Summary value={value()} />}
+          >
+            <CopyUrl url={props.url} />
+            <RawEditor handle={target()} />
+          </Show>
+        );
+      }}
     </Show>
   );
 }
@@ -455,7 +487,7 @@ function DomSummary(props: { element: Element }) {
  * the picture — with row identity kept per path, so a fill landing
  * elsewhere in the overlay doesn't rebuild every row. */
 function createStableEntries(ns: Namespace): Accessor<Entry[]> {
-  const raw = createEntries(ns);
+  const raw = from(ns.entries, ns.entries.value);
   let cache = new Map<string, Entry>();
   return createMemo(() => {
     const next = new Map<string, Entry>();

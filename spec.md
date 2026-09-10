@@ -1,8 +1,8 @@
 # ninepatch
 
 Plan 9's namespace, in the browser, over automerge. Two concepts: a
-**namespace** is a position you navigate, mount into, and listen on; a
-**handle** is a live grip on a value — read it, write it, hear it change.
+**namespace** is a position you navigate, mount into, and serve; a
+**handle** is a live grip on a value — read it, write it, subscribe to it.
 Some namespaces are also handles.
 
 ## Model
@@ -40,21 +40,28 @@ Some namespaces are also handles.
   path *or* a URL. URL-keyed entries live in a separate area of each
   overlay, reachable only by URL, never by path — so a document's subtree
   never grows a folder of other documents. A namespace can list its *own*
-  overlay (`entries()`), URLs included; nobody else's. So no namespace can
+  overlay (`entries`), URLs included; nobody else's. So no namespace can
   see what others opened unless it knows the URL — except the ones it
   opened or forked itself, which it reaches through `children`.
   `automerge:x…/foo` is a URL plus a relative path below it. URL reads fall
   through like everything else: if an ancestor has the doc, you get its
   handle.
 - **Misses are requests; unanswered requests are errors.** An open that
-  finds nothing bubbles `open` up the chain of namespaces it was opened or
-  forked from. A listener answers by mounting into `from` — the requester's
-  overlay, seen from the listener's position — and the walk resumes. If
-  nobody answers, `open` rejects. Servers are ordinary listeners; the repo
-  is one; nothing in the namespace knows what a document is.
-- **Handles are live.** A namespace's `value` reads through whatever the
-  walk lands on right now — remounts, retargeted links, the handle's own
-  changes all arrive as `change`.
+  finds nothing asks the servers registered up the chain of namespaces it
+  was opened or forked from. A server answers by mounting into `from` —
+  the requester's overlay, seen from the server's position — and the walk
+  resumes. If nobody answers, `open` rejects. A server is an object with
+  `open` and `close` handed to `serve`; the repo is one; nothing in the
+  namespace knows what a document is.
+- **Handles are live, and a handle is a store.** A namespace's `value`
+  reads through whatever the walk lands on right now — remounts,
+  retargeted links, the handle's own changes all arrive through
+  `subscribe`. `subscribe(fn)` is the store contract — `fn(value)` now and
+  after every change, returns unsubscribe — so a handle drops into Solid's
+  `from()` or Svelte's `$store` with nothing in between. Everything
+  observable about a namespace is a handle too: `entries` and `children`
+  are read-only handles. Lifetime is the platform's: `signal` is an
+  `AbortSignal` that aborts on close.
 
 ## Interface
 
@@ -68,7 +75,8 @@ type Handle<T> = {
   readonly value: T
   set(next: T): void                          // throws if the handle is read-only
   change(fn: (value: T) => void): void        // throws if the handle is read-only
-  on(event: "change", fn: () => void): () => void
+  /** The store contract: `fn(value)` now, and after every change. */
+  subscribe(fn: (value: T) => void): () => void
 }
 
 /** "a/b" or ["a", "b"]. A first name with a scheme is a URL. */
@@ -79,16 +87,33 @@ type Path = string | string[]
  * over it. */
 type Entry = { path: string[]; handle: Handle<unknown> | undefined }
 
-/** A position: navigate, mount, listen. No value of its own. */
+/** What answers requests. `target`: the names from the serving namespace
+ * to the node the walk is trying to reach; if it went through a link, the
+ * first is the URL. `from`: the requester's overlay, seen from the serving
+ * namespace; anything opened through it belongs to the requester and
+ * closes with it. */
+type Server = {
+  /** An open found nothing there. Must return a promise; decline by
+   * returning without mounting. */
+  open?(target: string[], from: Namespace): Promise<void>
+  /** The last namespace at or below `target` closed. */
+  close?(target: string[], from: Namespace): void
+}
+
+/** A position: navigate, mount, serve. No value of its own. */
 type Namespace = {
   /** The name given to fork(); for open(), the path opened; "root" for
    * createNamespace(). A label, nothing more. */
   readonly name: string
-  /** Everything opened or forked from this namespace that is still open. */
-  readonly children: ReadonlySet<Namespace>
   /** This namespace's own overlay — what it mounted, was served, or cut.
-   * Says nothing about what it inherits. */
-  entries(): Entry[]
+   * Says nothing about what it inherits. Read-only. */
+  readonly entries: Handle<Entry[]>
+  /** Everything opened or forked from this namespace that is still open.
+   * Read-only. */
+  readonly children: Handle<Namespace[]>
+  /** Aborts when this namespace is closed — by its holder, or because
+   * something it was opened or forked from was. */
+  readonly signal: AbortSignal
 
   /** Walk down (relative path) or ask for a document (URL). Returns a new
    * namespace positioned there. Name a type and you get a namespace that
@@ -109,29 +134,16 @@ type Namespace = {
    * cut is allowed. */
   unmount(path: Path): void
 
-  /** The value here was mounted, swapped, removed, or fired. */
-  on(event: "change", fn: () => void): () => void
-  /** entries() or children changed: a mount, an unmount, a fill, a child
-   * opened, forked, or closed. */
-  on(event: "mutated", fn: () => void): () => void
-  /** An open at or below here found nothing — from this namespace or
-   * anything opened or forked from it. `target`: the names from here to
-   * the node the walk is trying to reach; if it went through a link, the
-   * first is the URL. `from`: the requester's overlay, seen from here;
-   * anything opened through it belongs to the requester and closes with
-   * it. Must return a promise. */
-  on(event: "open", fn: (target: string[], from: Namespace) => Promise<void>): () => void
-  /** The last namespace at or below `target` closed. */
-  on(event: "close", fn: (target: string[], from: Namespace) => void): () => void
-  /** This namespace was closed — by its holder, or because something it
-   * was opened or forked from was. Fires once; afterwards it is dead. */
-  on(event: "destroy", fn: () => void): () => void
+  /** Answer misses at or below here — from this namespace or anything
+   * opened or forked from it. Returns unregister. */
+  serve(server: Server): () => void
 
   /** Release this namespace and everything opened or forked from it. */
   close(): void
 }
 
-/** What open resolves to: name a type and the namespace is also a handle. */
+/** What open resolves to: name a type and the namespace is also a handle —
+ * `value`, `set`, `change`, `subscribe` come from the handle side. */
 type Opened<T> = [T] extends [never] ? Namespace : Namespace & Handle<T>
 
 function createNamespace(): Namespace
@@ -142,10 +154,19 @@ function hasScheme(name: string): boolean
 class NotFound extends Error { readonly target: string[] }
 
 // Handles for things with their own behavior:
-function fromDoc<T>(doc: DocHandle<T>, options?: { readOnly?: boolean }): Handle<T>  // value ← doc(), change ← change, on ← on/off
+function fromDoc<T>(doc: DocHandle<T>, options?: { readOnly?: boolean }): Handle<T>  // value ← doc(), change ← change, subscribe ← on/off
 function field<T>(source: Handle<unknown>, path: string[]): Handle<T>  // a field of source, writes through source.change
 function derive<A, B>(source: Handle<A>, fn: (a: A) => B): Handle<B>
 ```
+
+`subscribe` is the one way to hear anything. It is the store contract
+Svelte defined and Solid's `from()` consumes: the subscriber is called
+synchronously with the current value, then after every change, and gets
+back an unsubscribe. So in Solid a handle is `from(doc, doc.value)`; in
+Svelte it is `$doc`; nothing framework-shaped lives in core. The one
+exception to "synchronously with the current value" is a namespace whose
+walk currently lands on nothing (rule 9): it stays quiet until something
+is there.
 
 The types at work:
 
@@ -190,25 +211,25 @@ error: `value` throws `NotFound` — everywhere `value` has nothing to read,
 
 ## Rules
 
-1. **Only misses fire `open`.** An open that finds a value, or entries
-   below the node, resolves at once and fires nothing. An open that finds
-   nothing fires `open` on every listener from the requester up through
-   the namespaces it was opened or forked from, nearest first, awaits the
-   handlers, re-walks, and either resolves, fires again (a link was
-   mounted and followed — a new position), or rejects. Link-following is
-   bounded: a walk that crosses more than 32 links — a cycle — is an
-   error, not a hang.
-2. **Not-found rejects.** Once the handlers have settled without putting
-   anything there, `open` rejects with `NotFound`. A handler that throws
+1. **Only misses ask the servers.** An open that finds a value, or entries
+   below the node, resolves at once and asks nothing. An open that finds
+   nothing calls `open` on every server from the requester up through the
+   namespaces it was opened or forked from, nearest first, awaits them,
+   re-walks, and either resolves, asks again (a link was mounted and
+   followed — a new position), or rejects. Link-following is bounded: a
+   walk that crosses more than 32 links — a cycle — is an error, not a
+   hang.
+2. **Not-found rejects.** Once the servers have settled without putting
+   anything there, `open` rejects with `NotFound`. A server that throws
    rejects the open with its error — an unavailable document fails the
    same way it would have loaded. There is no waiting for a late mount; a
    value you hold is a value you have.
-3. **Handlers return promises.** Returning anything else throws at the call
-   site. Declining is returning from an `async` function. A fire-and-forget
-   inside a handler can't be caught: the opener sees `NotFound`, and the
-   fill lands for the next opener.
-4. **One event per position.** Concurrent opens of the same node from the
-   same namespace share one request.
+3. **Servers return promises.** An `open` returning anything else throws at
+   the call site. Declining is returning from an `async` function. A
+   fire-and-forget inside a server can't be caught: the opener sees
+   `NotFound`, and the fill lands for the next opener.
+4. **One request per position.** Concurrent opens of the same node from
+   the same namespace share one request.
 5. **Answers go into `from`.** Fills are per requester overlay; sharing is
    the same handle underneath (`repo.find` caches, so two components
    hold one `DocHandle`). A parent never sees a child's fills. A fill
@@ -223,19 +244,22 @@ error: `value` throws `NotFound` — everywhere `value` has nothing to read,
    below it is open; `close` fires for it only when the last of those
    goes; `unmount` takes the subtree. Forgotten closes leak; accepted.
 8. **Close cascades.** Closing a namespace closes everything opened or
-   forked from it, innermost first, and each fires `destroy` once.
+   forked from it, innermost first, and each one's `signal` aborts once.
    Cleanup that isn't a namespace — DOM, timers, subscriptions — hangs off
-   `destroy`; nothing is returned from a component.
-9. **Live.** A remount or retarget re-walks from the node, and `change`
-   fires when the re-walk settles. Then `value` is whatever is there — and
-   if nothing is (a link retargeted to a document the server can't serve,
-   an ancestor unmounting what you fell through to), `value` throws
-   `NotFound` until something is. No stale value is ever returned.
-10. **Listing is own-overlay.** `entries()` is what this namespace put
+   the signal, directly (`addEventListener(…, { signal })`) or through an
+   `abort` listener; nothing is returned from a component.
+9. **Live.** A remount or retarget re-walks from the node, and subscribers
+   are called when the re-walk settles on a value. Then `value` is whatever
+   is there — and if nothing is (a link retargeted to a document the
+   server can't serve, an ancestor unmounting what you fell through to),
+   `value` throws `NotFound` and subscribers stay quiet until something
+   is. No stale value is ever delivered.
+10. **Listing is own-overlay.** `entries` is what this namespace put
    there — mounts, served fills (so URLs), cuts — never what it inherits,
    never a merged directory. `children` is what it opened or forked and
-   hasn't closed. Both are labels for a debugger or a host, not a walk:
-   nothing in them fires `open`. `mutated` fires when either changes.
+   hasn't closed. Both are read-only handles: labels for a debugger or a
+   host, not a walk — nothing in them asks a server — and `subscribe` on
+   either says when it changed.
 
 ## Examples
 
@@ -255,21 +279,22 @@ Filters by protocol; walks into documents itself; mounts every field as a
 live handle and lets the namespace follow the ones that hold URLs.
 
 ```ts
-ns.on("open", async (target, from) => {
-  const [url, ...fields] = target
-  if (!url.startsWith("automerge:")) return
+ns.serve({
+  async open(target, from) {
+    const [url, ...fields] = target
+    if (!url.startsWith("automerge:")) return
 
-  if (fields.length === 0) {
-    from.mount(url, fromDoc(await repo.find(url)))       // "#heads" → read-only view; rejects if unavailable
-    return
-  }
+    if (fields.length === 0) {
+      from.mount(url, fromDoc(await repo.find(url)))       // "#heads" → read-only view; rejects if unavailable
+      return
+    }
 
-  const doc = await from.open<Record<string, unknown>>(url)   // a miss the first time: this same handler fills it
-  from.mount(target, field(doc, fields))                      // doc is a handle; it closes with the requester
-})
-
-ns.on("close", (target, from) => {
-  if (target[0].startsWith("automerge:")) from.unmount(target)
+    const doc = await from.open<Record<string, unknown>>(url)   // a miss the first time: this same server fills it
+    from.mount(target, field(doc, fields))                      // doc is a handle; it closes with the requester
+  },
+  close(target, from) {
+    if (target[0].startsWith("automerge:")) from.unmount(target)
+  },
 })
 ```
 
@@ -280,8 +305,8 @@ A plain `from.mount(url, docHandle.doc())` would mount a snapshot. Deriving
 the field from the opened namespace rather than from the document handle
 directly means it reads through the requester's overlay live — shadow the
 URL below and the field follows. And failure travels the same road as the answer: an
-unavailable document rejects `repo.find`, which rejects the handler, which
-rejects the open that asked.
+unavailable document rejects `repo.find`, which rejects the server's
+`open`, which rejects the open that asked.
 
 ### Open, walk, edit
 
@@ -291,7 +316,7 @@ const context = await ns.open<Doc>("automerge:home…/packages/core/context")
 
 const title = await ns.open<string>("automerge:x…/title")
 title.set("hello")                                    // doc.change(d => d.title = "hello")
-title.on("change", () => render(title.value))
+title.subscribe((t) => render(t))                     // now, and on every change
 
 const account = await ns.open<AccountDoc>("account")           // link followed: the doc
 const rootFolder = await account.open<FolderDoc>("rootFolder") // URL field: followed again
@@ -318,7 +343,7 @@ addEventListener("hashchange", () => location.set(parseRoute(window.location)))
 ns.mount("selectedDoc", derive(location, (l) => l.docUrl))   // a valued namespace is a Handle
 
 const selected = await ns.open<Doc>("selectedDoc")
-selected.on("change", () => show(selected.value))     // fires once the new document is served
+selected.subscribe(show)                              // called again once the new document is served
 ```
 
 ### A component
@@ -327,7 +352,7 @@ Components receive a namespace and nothing else. The DOM is an entry. A
 child is a `fork()`: same position, private overlay; the name is a label
 for whoever inspects the tree later. There is nothing to return: when
 whoever handed you the namespace closes it, everything forked from it
-closes too, and `destroy` is where the rest of the cleanup goes.
+closes too, and `signal` is where the rest of the cleanup goes.
 
 ```ts
 async function Frame(ns: Namespace) {
@@ -340,29 +365,44 @@ async function Frame(ns: Namespace) {
   child.mount("selectedDoc", "automerge:other…")   // shadows; Frame's own view unchanged
   Markdown(child)
 
-  ns.on("destroy", () => slot.remove())        // child, and everything Markdown opened, close on their own
+  ns.signal.addEventListener("abort", () => slot.remove())   // child, and everything Markdown opened, close on their own
+}
+```
+
+With a framework, the component is the same shape — open what you need,
+then hand the handles to the framework as stores:
+
+```tsx
+async function Chat(ns: Namespace) {
+  const dom = await ns.open<Element>("dom")
+  const doc = await ns.open<ChatDoc>("doc")
+  const dispose = render(() => {
+    const chat = from(doc, doc.value)          // Solid's from(): a handle is a store
+    return <ul>{chat().messages.map(…)}</ul>
+  }, dom.value)
+  ns.signal.addEventListener("abort", dispose)
 }
 ```
 
 ### Looking at the tree
 
-A host that named its forks can draw them. `entries()` is each
-namespace's own overlay, `children` is what hangs below it — so the
-picture is the hierarchy of namespaces with a table per node, and it
-updates on `mutated`.
+A host that named its forks can draw them. `entries` is each namespace's
+own overlay, `children` is what hangs below it — so the picture is the
+hierarchy of namespaces with a table per node. Both are handles, so the
+picture redraws by subscribing.
 
 ```ts
 function draw(ns: Namespace, depth = 0) {
   console.log("  ".repeat(depth) + ns.name)
-  for (const { path, handle } of ns.entries())
+  for (const { path, handle } of ns.entries.value)
     console.log("  ".repeat(depth + 1) + path.join("/"), handle ? handle.value : "(cut)")
-  for (const child of ns.children) draw(child, depth + 1)
+  for (const child of ns.children.value) draw(child, depth + 1)
 }
 
 const bob = ns.fork("Bob")
 bob.mount("dom", slot)
 Chat(bob)                                 // opens "doc" — a fill lands in bob's overlay
-bob.on("mutated", () => draw(ns))         // root › Bob › { dom: <div>, automerge:chat…: {…} }
+bob.entries.subscribe(() => draw(ns))     // root › Bob › { dom: <div>, automerge:chat…: {…} }
 ```
 
 ### A capability is just a deep namespace
@@ -403,10 +443,12 @@ const settings = await ns.open<Settings>("settings")  // a hit now
 ### Servers answer with anything
 
 ```ts
-ns.on("open", async ([dir, name], from) => {
-  if (dir !== "modules" || name === undefined) return
-  const packages = await ns.open<FolderDoc>("account/packages")   // the folder, not the entry
-  from.mount(["modules", name], await importPackage(packages.value[name], (u) => repo.find(u)))
+ns.serve({
+  async open([dir, name], from) {
+    if (dir !== "modules" || name === undefined) return
+    const packages = await ns.open<FolderDoc>("account/packages")   // the folder, not the entry
+    from.mount(["modules", name], await importPackage(packages.value[name], (u) => repo.find(u)))
+  },
 })
 
 const { loadComponent } = (await ns.open<SolidPkg>("modules/solid")).value
@@ -419,22 +461,23 @@ const { loadComponent } = (await ns.open<SolidPkg>("modules/solid")).value
 - A first name with a scheme-shaped prefix reads as a URL. In string form
   escape the colon as `\:`; in array form there is no escape — pick another
   name.
-- A held value can be lost (rule 9); `change` fires, then `value` throws
-  `NotFound`. Rare, and the same shape as automerge's `doc()` on a deleted
+- A held value can be lost (rule 9); subscribers go quiet and `value`
+  throws `NotFound`. A store fed from it keeps showing the last value it
+  was given. Rare, and the same shape as automerge's `doc()` on a deleted
   document.
 - Naming a type on a node that has entries but no value is a programmer
   error the types can't catch: `value` throws `NotFound`.
 - A URL can't be revoked from a child that knows it; cutting only hides
   plain mounts.
 - Servers must register on an ancestor of what they serve and filter by
-  prefix; a listener on a sibling or child namespace hears nothing.
+  prefix; a server on a sibling or child namespace hears nothing.
 - Folder docs change shape (`Record<name, url>`, no metadata); no
   compatibility with existing folders.
 
 ## Deferred
 
 - Directories: a merged listing of what a walk would find at a position,
-  through the fall-through chain and across links. `entries()` is
+  through the fall-through chain and across links. `entries` is
   own-overlay only.
 - Read-only handles (a viewer that can't `set`).
 - A reactive query for a path that isn't there yet — automerge's

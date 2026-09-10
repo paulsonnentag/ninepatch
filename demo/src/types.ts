@@ -1,3 +1,10 @@
+import type { Namespace } from "@ninepatch/core";
+
+/** A tool is a function of one namespace. Everything it needs — the DOM
+ * included — is an entry; there is nothing to return, and cleanup hangs
+ * off `ns.signal`. */
+export type Tool = (ns: Namespace) => Promise<void>;
+
 export type ContactDoc = { name: string; color: string };
 export type ChatDoc = {
   messages: { author: string; color: string; text: string; at: number }[];

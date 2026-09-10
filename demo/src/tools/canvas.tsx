@@ -1,18 +1,33 @@
 /** §2/§3. Cards on a canvas; some carry a location. Drag to move, click to
  * select; the selected card shows title/lat/lng inputs. Selection is the
- * shared `selection` entry — the map holds the same handle. */
+ * shared `selection` entry — the map holds the same handle. The tool is
+ * the four lines at the top; `Cards` is an ordinary Solid component that
+ * takes the two handles as props. */
 
-import { For, Show } from "solid-js";
-import { createOpen, createValue, tool } from "@ninepatch/solid";
+import { For, from, Show } from "solid-js";
+import { render } from "solid-js/web";
+import type { Handle, Namespace } from "@ninepatch/core";
 import type { CanvasDoc } from "../types";
 
-export const Canvas = tool(() => {
-  const doc = createOpen<CanvasDoc>("doc");
-  const state = createValue(doc);
-  const selection = createOpen<string | null>("selection");
-  const selected = createValue(selection);
+export async function Canvas(ns: Namespace) {
+  const dom = await ns.open<Element>("dom");
+  const doc = await ns.open<CanvasDoc>("doc");
+  const selection = await ns.open<string | null>("selection");
+  const dispose = render(
+    () => <Cards doc={doc} selection={selection} />,
+    dom.value
+  );
+  ns.signal.addEventListener("abort", dispose);
+}
 
-  const change = (fn: (d: CanvasDoc) => void) => doc()!.change(fn);
+function Cards(props: {
+  doc: Handle<CanvasDoc>;
+  selection: Handle<string | null>;
+}) {
+  const state = from(props.doc, props.doc.value);
+  const selected = from(props.selection, props.selection.value);
+
+  const change = (fn: (d: CanvasDoc) => void) => props.doc.change(fn);
   const add = () =>
     change((d) => {
       d.cards[Math.random().toString(36).slice(2, 8)] = {
@@ -27,9 +42,9 @@ export const Canvas = tool(() => {
       <button class="add" onClick={add}>
         add card
       </button>
-      <For each={Object.keys(state()?.cards ?? {})}>
+      <For each={Object.keys(state().cards)}>
         {(id) => {
-          const card = () => state()?.cards[id];
+          const card = () => state().cards[id];
           const number = (raw: string) => {
             const value = parseFloat(raw);
             return Number.isFinite(value) ? value : undefined;
@@ -38,7 +53,7 @@ export const Canvas = tool(() => {
             const target = down.target as HTMLElement;
             if (target.tagName === "INPUT" || target.tagName === "BUTTON")
               return;
-            selection()?.set(id);
+            props.selection.set(id);
             const start = card();
             if (!start) return;
             const dx = down.clientX - start.x;
@@ -120,4 +135,4 @@ export const Canvas = tool(() => {
       </For>
     </div>
   );
-});
+}

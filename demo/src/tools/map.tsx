@@ -2,44 +2,50 @@
  * gets a list shaped the way it wants — the host derived it. Pins share
  * the `selection` entry with whoever else holds it. */
 
-import { For } from "solid-js";
-import { createOpen, createValue, tool } from "@ninepatch/solid";
+import { For, from } from "solid-js";
+import { render } from "solid-js/web";
+import type { Namespace } from "@ninepatch/core";
 import type { Place } from "../types";
 
-export const MapView = tool(() => {
-  const places = createValue(createOpen<Place[]>("places"));
-  const selection = createOpen<string | null>("selection");
-  const selected = createValue(selection);
+export async function MapView(ns: Namespace) {
+  const dom = await ns.open<Element>("dom");
+  const places = await ns.open<Place[]>("places");
+  const selection = await ns.open<string | null>("selection");
 
-  return (
-    <svg class="map" viewBox="0 0 360 180">
-      <For each={CONTINENTS}>
-        {(poly) => (
-          <polygon
-            class="land"
-            points={poly
-              .map(([lat, lng]) => `${lng + 180},${90 - lat}`)
-              .join(" ")}
-          />
-        )}
-      </For>
-      <For each={places() ?? []}>
-        {(place) => (
-          <g
-            class="pin"
-            classList={{ selected: selected() === place.id }}
-            transform={`translate(${place.lng + 180}, ${90 - place.lat})`}
-            onClick={() => selection()?.set(place.id)}
-          >
-            <circle class="hit" r="8" />
-            <circle r="3" />
-            <text y="-5">{place.title}</text>
-          </g>
-        )}
-      </For>
-    </svg>
-  );
-});
+  const dispose = render(() => {
+    const pins = from(places, places.value);
+    const selected = from(selection, selection.value);
+    return (
+      <svg class="map" viewBox="0 0 360 180">
+        <For each={CONTINENTS}>
+          {(poly) => (
+            <polygon
+              class="land"
+              points={poly
+                .map(([lat, lng]) => `${lng + 180},${90 - lat}`)
+                .join(" ")}
+            />
+          )}
+        </For>
+        <For each={pins()}>
+          {(place) => (
+            <g
+              class="pin"
+              classList={{ selected: selected() === place.id }}
+              transform={`translate(${place.lng + 180}, ${90 - place.lat})`}
+              onClick={() => selection.set(place.id)}
+            >
+              <circle class="hit" r="8" />
+              <circle r="3" />
+              <text y="-5">{place.title}</text>
+            </g>
+          )}
+        </For>
+      </svg>
+    );
+  }, dom.value);
+  ns.signal.addEventListener("abort", dispose);
+}
 
 // Rough low-poly continents, [lat, lng] vertices. Recognizable, not accurate.
 

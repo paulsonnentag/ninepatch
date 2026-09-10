@@ -14,13 +14,11 @@
     "noUncheckedIndexedAccess": false,
     "paths": {
       "@ninepatch/core": ["./core/src/index.ts"],
-      "@ninepatch/solid": ["./frameworks/solid/src/index.tsx"],
       "@ninepatch/codemirror": ["./frameworks/codemirror/src/index.ts"]
     }
   },
   "include": [
     "core/src",
-    "frameworks/solid/src",
     "frameworks/codemirror/src",
     "demo/src",
     "demo/vite.config.ts"

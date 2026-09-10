@@ -4,6 +4,7 @@ export {
   type Entry,
   type Namespace,
   type Opened,
+  type Server,
 } from "./namespace";
 export {
   derive,

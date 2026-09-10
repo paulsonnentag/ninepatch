@@ -28,18 +28,20 @@ export const ns = createNamespace();
 // The repo, as a server — verbatim from the spec. Filters by protocol,
 // walks into documents itself, mounts every asked-for field as a live
 // handle. Nothing in the namespace knows what a document is.
-ns.on("open", async (target, from) => {
-  const [url, ...fields] = target;
-  if (!url.startsWith("automerge:")) return;
-  if (fields.length === 0) {
-    from.mount(url, fromDoc(await repo.find(url as AnyDocumentId)));
-    return;
-  }
-  const doc = await from.open<Record<string, unknown>>(url); // a miss the first time: this same handler fills it
-  from.mount(target, field(doc, fields)); // doc is a handle; it closes with the requester
-});
-ns.on("close", (target, from) => {
-  if (target[0].startsWith("automerge:")) from.unmount(target);
+ns.serve({
+  async open(target, from) {
+    const [url, ...fields] = target;
+    if (!url.startsWith("automerge:")) return;
+    if (fields.length === 0) {
+      from.mount(url, fromDoc(await repo.find(url as AnyDocumentId)));
+      return;
+    }
+    const doc = await from.open<Record<string, unknown>>(url); // a miss the first time: this same handler fills it
+    from.mount(target, field(doc, fields)); // doc is a handle; it closes with the requester
+  },
+  close(target, from) {
+    if (target[0].startsWith("automerge:")) from.unmount(target);
+  },
 });
 
 ns.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again

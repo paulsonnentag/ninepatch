@@ -5,16 +5,15 @@
  * rename a key. Writes go through `handle.change`; strings inside an
  * automerge document go through `updateText` so concurrent edits merge. */
 
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, from, Show } from "solid-js";
 import { isAutomerge, updateText } from "@automerge/automerge";
 import { hasScheme, type Handle } from "@ninepatch/core";
-import { createValue } from "@ninepatch/solid";
 
 type Prop = string | number;
 type Kind = "string" | "number" | "boolean" | "null" | "object" | "array";
 
 export function RawEditor(props: { handle: Handle<unknown> }) {
-  const value = createValue(props.handle);
+  const value = from(props.handle, props.handle.value);
   const [error, setError] = createSignal<string | undefined>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 

@@ -52,9 +52,6 @@ importers:
       '@ninepatch/core':
         specifier: workspace:*
         version: link:../core
-      '@ninepatch/solid':
-        specifier: workspace:*
-        version: link:../frameworks/solid
       codemirror:
         specifier: ^6.0.1
         version: 6.0.2
@@ -86,15 +83,6 @@ importers:
       '@ninepatch/core':
         specifier: workspace:*
         version: link:../../core
-
-  frameworks/solid:
-    dependencies:
-      '@ninepatch/core':
-        specifier: workspace:*
-        version: link:../../core
-      solid-js:
-        specifier: ^1.9.0
-        version: 1.9.15
 
 packages:
 

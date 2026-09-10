@@ -1,10 +1,19 @@
 /** The namespace: a position plus a private overlay. `open` walks down
  * (or asks for a URL) and returns a new namespace positioned there;
- * misses bubble `open` up the chain of namespaces this one was opened or
- * forked from; unanswered requests reject with NotFound. See spec.md —
- * it is canonical. */
+ * misses bubble to the servers registered up the chain of namespaces this
+ * one was opened or forked from; unanswered requests reject with NotFound.
+ * See spec.md — it is canonical. */
 
-import { brand, Emitter, isHandle, wrap, type Handle } from "./handle";
+import {
+  brand,
+  derive,
+  Emitter,
+  isHandle,
+  onChange,
+  readonly,
+  wrap,
+  type Handle,
+} from "./handle";
 import { Overlay, type Entry } from "./overlay";
 import { isUrlRooted, parsePath, startsWith, type Path } from "./path";
 import { walk, type WalkResult } from "./walk";
@@ -15,11 +24,15 @@ export type Namespace = {
   /** The name given to fork(); for open(), the path opened; "root" for
    * createNamespace(). A label, nothing more. */
   readonly name: string;
-  /** Everything opened or forked from this namespace that is still open. */
-  readonly children: ReadonlySet<Namespace>;
   /** This namespace's own overlay — what it mounted, was served, or cut.
-   * Says nothing about what it inherits. */
-  entries(): Entry[];
+   * Says nothing about what it inherits. Read-only. */
+  readonly entries: Handle<Entry[]>;
+  /** Everything opened or forked from this namespace that is still open.
+   * Read-only. */
+  readonly children: Handle<Namespace[]>;
+  /** Aborts when this namespace is closed — by its holder, or because
+   * something it was opened or forked from was. */
+  readonly signal: AbortSignal;
 
   /** Walk down (relative path) or ask for a document (URL). Returns a new
    * namespace positioned there. Name a type and you get a namespace that
@@ -40,22 +53,25 @@ export type Namespace = {
    * cut is allowed. */
   unmount(path: Path): void;
 
-  /** The value here was mounted, swapped, removed, or fired. */
-  on(event: "change", fn: () => void): () => void;
-  /** entries() or children changed. */
-  on(event: "mutated", fn: () => void): () => void;
-  on(
-    event: "open",
-    fn: (target: string[], from: Namespace) => Promise<void>
-  ): () => void;
-  on(
-    event: "close",
-    fn: (target: string[], from: Namespace) => void
-  ): () => void;
-  on(event: "destroy", fn: () => void): () => void;
+  /** Answer misses at or below here — from this namespace or anything
+   * opened or forked from it. Returns unregister. */
+  serve(server: Server): () => void;
 
   /** Release this namespace and everything opened or forked from it. */
   close(): void;
+};
+
+/** What answers requests. `target`: the names from the serving namespace
+ * to the node the walk is trying to reach; if it went through a link, the
+ * first is the URL. `from`: the requester's overlay, seen from the serving
+ * namespace; anything opened through it belongs to the requester and
+ * closes with it. */
+export type Server = {
+  /** An open found nothing there. Must return a promise; decline by
+   * returning without mounting. */
+  open?(target: string[], from: Namespace): Promise<void>;
+  /** The last namespace at or below `target` closed. */
+  close?(target: string[], from: Namespace): void;
 };
 
 export type Opened<T> = [T] extends [never] ? Namespace : Namespace & Handle<T>;
@@ -70,9 +86,6 @@ export class NotFound extends Error {
 export function createNamespace(): Namespace {
   return new NamespaceImpl(undefined, [], "root") as unknown as Namespace;
 }
-
-type OpenListener = (target: string[], from: Namespace) => Promise<void>;
-type CloseListener = (target: string[], from: Namespace) => void;
 
 type Held = { requester: NamespaceImpl; key: string };
 type Fired = { key: string; target: string[] };
@@ -89,38 +102,35 @@ export class NamespaceImpl {
    * went through a URL. */
   readonly pos: string[];
 
-  readonly children = new Set<NamespaceImpl>();
+  readonly entries: Handle<Entry[]>;
+  readonly children: Handle<NamespaceImpl[]>;
+  readonly servers = new Set<Server>();
   /** Requests this namespace fired as requester, refcounted by the
    * namespaces holding their answers. */
   readonly served = new Map<string, { target: string[]; count: number }>();
   readonly pending = new Map<string, Promise<void>>();
-  readonly listeners = {
-    change: new Emitter(),
-    mutated: new Emitter(),
-    destroy: new Emitter(),
-    open: new Set<OpenListener>(),
-    close: new Set<CloseListener>(),
-  };
+  /** The value here moved — the Watch says when. */
+  readonly changes = new Emitter();
 
+  private readonly kids = new Set<NamespaceImpl>();
+  private readonly kidsChanged = new Emitter();
+  private readonly controller = new AbortController();
   private held: Held[] = [];
-  private closed = false;
   private watch: Watch | undefined;
-  private readonly unsubOverlay: () => void;
 
   constructor(parent: NamespaceImpl | undefined, base: string[], name: string) {
     this.parent = parent;
     this.base = base;
     this.name = name;
     this.pos = !parent || isUrlRooted(base) ? base : [...parent.pos, ...base];
-    this.unsubOverlay = this.overlay.mutated.on(() =>
-      this.listeners.mutated.emit()
-    );
+    this.entries = readonly(() => this.overlay.entries(), this.overlay.mutated);
+    this.children = readonly(() => [...this.kids], this.kidsChanged);
   }
 
   // --- namespace surface ---------------------------------------------------
 
-  entries(): Entry[] {
-    return this.overlay.entries();
+  get signal(): AbortSignal {
+    return this.controller.signal;
   }
 
   async open(path: Path): Promise<NamespaceImpl> {
@@ -147,48 +157,22 @@ export class NamespaceImpl {
     this.overlay.unmount(rel);
   }
 
-  on(
-    event: "change" | "mutated" | "destroy" | "open" | "close",
-    fn: (...args: never[]) => unknown
-  ): () => void {
-    if (event === "mutated") return this.listeners.mutated.on(fn as () => void);
-    if (event === "open") {
-      const listener = fn as OpenListener;
-      this.listeners.open.add(listener);
-      return () => this.listeners.open.delete(listener);
-    }
-    if (event === "close") {
-      const listener = fn as CloseListener;
-      this.listeners.close.add(listener);
-      return () => this.listeners.close.delete(listener);
-    }
-    if (event === "destroy") {
-      const listener = fn as () => void;
-      if (this.closed) {
-        listener();
-        return () => {};
-      }
-      return this.listeners.destroy.on(listener);
-    }
-    this.ensureWatch();
-    return this.listeners.change.on(fn as () => void);
+  serve(server: Server): () => void {
+    this.servers.add(server);
+    return () => this.servers.delete(server);
   }
 
   close(): void {
     if (this.closed) return;
-    this.closed = true;
-    for (const child of [...this.children].reverse()) child.close();
-    this.children.clear();
+    this.controller.abort();
+    for (const child of [...this.kids].reverse()) child.close();
+    this.kids.clear();
     this.watch?.stop();
-    this.unsubOverlay();
-    this.listeners.destroy.emit();
-    this.listeners.destroy.clear();
-    this.listeners.change.clear();
-    this.listeners.mutated.clear();
-    this.listeners.open.clear();
-    this.listeners.close.clear();
-    if (this.parent?.children.delete(this))
-      this.parent.listeners.mutated.emit();
+    this.changes.clear();
+    this.kidsChanged.clear();
+    this.overlay.mutated.clear();
+    this.servers.clear();
+    if (this.parent?.kids.delete(this)) this.parent.kidsChanged.emit();
     const held = this.held;
     this.held = [];
     for (const { requester, key } of held) {
@@ -219,6 +203,25 @@ export class NamespaceImpl {
     this.terminal().change(fn);
   }
 
+  /** The store contract over a live read: `fn(value)` now if something is
+   * there, and each time the re-walk settles on something. While the walk
+   * lands on nothing, subscribers stay quiet and `value` throws. */
+  subscribe(fn: (value: unknown) => void): () => void {
+    this.ensureWatch();
+    const notify = () => {
+      let value: unknown;
+      try {
+        value = this.value;
+      } catch (e) {
+        if (e instanceof NotFound) return;
+        throw e;
+      }
+      fn(value);
+    };
+    notify();
+    return this.changes.on(notify);
+  }
+
   // --- internals -----------------------------------------------------------
 
   async openRel(rel: string[]): Promise<NamespaceImpl> {
@@ -226,12 +229,6 @@ export class NamespaceImpl {
     const { fired } = await resolveWithFills(this, abs);
     const child = this.adopt(new NamespaceImpl(this, rel, rel.join("/")));
     child.hold(this, fired);
-    return child;
-  }
-
-  private adopt(child: NamespaceImpl): NamespaceImpl {
-    this.children.add(child);
-    this.listeners.mutated.emit();
     return child;
   }
 
@@ -254,6 +251,16 @@ export class NamespaceImpl {
     return rel.length > 0 ? rel : abs;
   }
 
+  private get closed(): boolean {
+    return this.controller.signal.aborted;
+  }
+
+  private adopt(child: NamespaceImpl): NamespaceImpl {
+    this.kids.add(child);
+    this.kidsChanged.emit();
+    return child;
+  }
+
   private terminal(): Handle<unknown> {
     const result = walk(this, this.pos);
     if (result.kind !== "found" || !result.handle)
@@ -270,10 +277,10 @@ export class NamespaceImpl {
   }
 }
 
-/** The miss/fill cycle: walk; on a miss, fire `open` up the chain (deduped
- * per target per requester), await the handlers, re-walk. A re-walk that
- * misses somewhere new means a link was mounted and followed — go again.
- * The same miss twice is NotFound. */
+/** The miss/fill cycle: walk; on a miss, ask the servers up the chain
+ * (deduped per target per requester), await the handlers, re-walk. A
+ * re-walk that misses somewhere new means a link was mounted and followed
+ * — go again. The same miss twice is NotFound. */
 async function resolveWithFills(
   requester: NamespaceImpl,
   abs: string[]
@@ -310,12 +317,13 @@ async function fireOpen(
 ): Promise<void> {
   const calls: Promise<void>[] = [];
   for (let ns: NamespaceImpl | undefined = requester; ns; ns = ns.parent) {
-    if (ns.listeners.open.size === 0) continue;
+    if (ns.servers.size === 0) continue;
     const target = targetFor(ns, absTarget);
     if (!target) continue;
     const from = new FromView(requester, ns) as unknown as Namespace;
-    for (const listener of [...ns.listeners.open]) {
-      const out = listener(target, from);
+    for (const server of [...ns.servers]) {
+      if (!server.open) continue;
+      const out = server.open(target, from);
       if (!out || typeof out.then !== "function")
         throw new TypeError("open handler must return a promise");
       calls.push(out);
@@ -326,11 +334,11 @@ async function fireOpen(
 
 function fireClose(requester: NamespaceImpl, absTarget: string[]): void {
   for (let ns: NamespaceImpl | undefined = requester; ns; ns = ns.parent) {
-    if (ns.listeners.close.size === 0) continue;
+    if (ns.servers.size === 0) continue;
     const target = targetFor(ns, absTarget);
     if (!target) continue;
     const from = new FromView(requester, ns) as unknown as Namespace;
-    for (const listener of [...ns.listeners.close]) listener(target, from);
+    for (const server of [...ns.servers]) server.close?.(target, from);
   }
 }
 
@@ -340,37 +348,42 @@ function targetFor(ns: NamespaceImpl, abs: string[]): string[] | undefined {
   return startsWith(abs, ns.pos) ? abs.slice(ns.pos.length) : undefined;
 }
 
-/** The requester's overlay, seen from a listener's position: paths are
+/** The requester's overlay, seen from a server's position: paths are
  * translated into the requester's coordinates, so fills land in the
  * requester's overlay and anything opened through it belongs to the
  * requester and closes with it. */
 class FromView {
   readonly [brand] = true;
+  /** The requester's entries, in the server's coordinates where those
+   * exist; URL-rooted paths are the same everywhere. */
+  readonly entries: Handle<Entry[]>;
 
   constructor(
     private readonly requester: NamespaceImpl,
-    private readonly listener: NamespaceImpl
-  ) {}
+    private readonly server: NamespaceImpl
+  ) {
+    const prefix =
+      isUrlRooted(server.pos) || isUrlRooted(requester.pos)
+        ? []
+        : requester.pos.slice(server.pos.length);
+    this.entries = derive(requester.entries, (entries) =>
+      entries.map(({ path, handle }) => ({
+        path: isUrlRooted(path) ? path : [...prefix, ...path],
+        handle,
+      }))
+    );
+  }
 
   get name(): string {
     return this.requester.name;
   }
 
-  get children(): ReadonlySet<NamespaceImpl> {
+  get children(): Handle<NamespaceImpl[]> {
     return this.requester.children;
   }
 
-  /** The requester's entries, in the listener's coordinates where those
-   * exist; URL-rooted paths are the same everywhere. */
-  entries(): Entry[] {
-    const prefix =
-      isUrlRooted(this.listener.pos) || isUrlRooted(this.requester.pos)
-        ? []
-        : this.requester.pos.slice(this.listener.pos.length);
-    return this.requester.entries().map(({ path, handle }) => ({
-      path: isUrlRooted(path) ? path : [...prefix, ...path],
-      handle,
-    }));
+  get signal(): AbortSignal {
+    return this.requester.signal;
   }
 
   open(path: Path): Promise<NamespaceImpl> {
@@ -391,11 +404,8 @@ class FromView {
     this.requester.unmount(this.rel(path));
   }
 
-  on(
-    event: "change" | "mutated" | "destroy" | "open" | "close",
-    fn: (...args: never[]) => unknown
-  ): () => void {
-    return this.requester.on(event, fn);
+  serve(server: Server): () => void {
+    return this.requester.serve(server);
   }
 
   close(): void {
@@ -414,12 +424,16 @@ class FromView {
     this.requester.change(fn);
   }
 
+  subscribe(fn: (value: unknown) => void): () => void {
+    return this.requester.subscribe(fn);
+  }
+
   private rel(path: Path): string[] {
     const names = parsePath(path);
     if (isUrlRooted(names)) return names;
-    if (isUrlRooted(this.listener.pos) || isUrlRooted(this.requester.pos))
+    if (isUrlRooted(this.server.pos) || isUrlRooted(this.requester.pos))
       throw new Error("fill outside the requester's subtree");
-    const abs = [...this.listener.pos, ...names];
+    const abs = [...this.server.pos, ...names];
     if (!startsWith(abs, this.requester.pos))
       throw new Error("fill outside the requester's subtree");
     return abs.slice(this.requester.pos.length);
@@ -427,7 +441,7 @@ class FromView {
 }
 
 /** Live reads: re-walk when any overlay in the chain mutates or any handle
- * the walk crossed fires; `change` fires once the re-walk settles — which
+ * the walk crossed fires; `changes` fires once the re-walk settles — which
  * may involve the servers, when a retargeted link points somewhere not
  * yet filled. */
 class Watch {
@@ -481,7 +495,7 @@ class Watch {
     this.resubscribe(this.safeWalk());
     const changed = fired || terminal !== this.lastTerminal;
     this.lastTerminal = terminal;
-    if (changed) this.ns.listeners.change.emit();
+    if (changed) this.ns.changes.emit();
   }
 
   private safeWalk(): WalkResult | undefined {
@@ -499,7 +513,12 @@ class Watch {
     const handles = [...result.crossed];
     if (result.kind === "found" && result.handle) handles.push(result.handle);
     for (const handle of handles) {
-      this.unsubHandles.push(handle.on("change", () => this.trigger(true)));
+      try {
+        this.unsubHandles.push(onChange(handle, () => this.trigger(true)));
+      } catch {
+        // Its first read threw (a derivation over nothing yet): the overlay
+        // chain still triggers a re-walk, and we subscribe again then.
+      }
     }
   }
 }

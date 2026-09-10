@@ -1,7 +1,9 @@
 /** A handle is a live grip on a value: read it, write it, hear it change.
  * Branded, not duck-typed: things opt in by carrying the symbol, and
  * `mount` checks for it. A DocHandle is the model: `set` replaces,
- * `change` mutates in place, both fire. */
+ * `change` mutates in place, both fire. `subscribe` is the store contract
+ * — the subscriber gets the value now and after every change — so a
+ * handle drops straight into Solid's `from()` or Svelte's `$store`. */
 
 export const brand: unique symbol = Symbol.for("ninepatch.handle");
 
@@ -10,7 +12,8 @@ export type Handle<T> = {
   readonly value: T;
   set(next: T): void;
   change(fn: (value: T) => void): void;
-  on(event: "change", fn: () => void): () => void;
+  /** `fn(value)` now, and after every change. Returns unsubscribe. */
+  subscribe(fn: (value: T) => void): () => void;
 };
 
 export function isHandle(x: unknown): x is Handle<unknown> {
@@ -24,7 +27,7 @@ export function isHandle(x: unknown): x is Handle<unknown> {
 /** What `mount` does to a plain value: a mutable handle of the
  * namespace's own. */
 export function wrap<T>(initial: T): Handle<T> {
-  const emitter = new Emitter();
+  const changes = new Emitter();
   let current = initial;
   return {
     [brand]: true,
@@ -33,14 +36,15 @@ export function wrap<T>(initial: T): Handle<T> {
     },
     set(next: T) {
       current = next;
-      emitter.emit();
+      changes.emit();
     },
     change(fn: (value: T) => void) {
       fn(current);
-      emitter.emit();
+      changes.emit();
     },
-    on(_event: "change", fn: () => void) {
-      return emitter.on(fn);
+    subscribe(fn: (value: T) => void) {
+      fn(current);
+      return changes.on(() => fn(current));
     },
   };
 }
@@ -54,8 +58,8 @@ export type DocHandleLike<T> = {
   off(event: "change", fn: () => void): void;
 };
 
-/** A handle over a document: value ← doc(), change ← change, on ← on/off.
- * `readOnly` makes set/change throw (a pinned `#heads` view). */
+/** A handle over a document: value ← doc(), change ← change, subscribe ←
+ * on/off. `readOnly` makes set/change throw (a pinned `#heads` view). */
 export function fromDoc<T>(
   handle: DocHandleLike<T>,
   options: { readOnly?: boolean } = {}
@@ -81,9 +85,11 @@ export function fromDoc<T>(
       write();
       handle.change(fn);
     },
-    on(_event: "change", fn: () => void) {
-      handle.on("change", fn);
-      return () => handle.off("change", fn);
+    subscribe(fn: (value: T) => void) {
+      const notify = () => fn(handle.doc() as T);
+      notify();
+      handle.on("change", notify);
+      return () => handle.off("change", notify);
     },
   };
 }
@@ -112,8 +118,8 @@ export function field<T>(source: Handle<unknown>, path: string[]): Handle<T> {
     change(fn: (value: T) => void) {
       source.change((draft) => fn(read(draft)));
     },
-    on(_event: "change", fn: () => void) {
-      return source.on("change", fn);
+    subscribe(fn: (value: T) => void) {
+      return source.subscribe((value) => fn(read(value)));
     },
   };
 }
@@ -134,10 +140,42 @@ export function derive<A, B>(
     change() {
       throw new Error("read-only handle");
     },
-    on(_event: "change", cb: () => void) {
-      return source.on("change", cb);
+    subscribe(cb: (value: B) => void) {
+      return source.subscribe((value) => cb(fn(value)));
     },
   };
+}
+
+/** A read-only handle over a getter and the emitter that says when it
+ * moved — what a namespace's `entries` and `children` are. */
+export function readonly<T>(read: () => T, changes: Emitter): Handle<T> {
+  return {
+    [brand]: true,
+    get value() {
+      return read();
+    },
+    set() {
+      throw new Error("read-only handle");
+    },
+    change() {
+      throw new Error("read-only handle");
+    },
+    subscribe(fn: (value: T) => void) {
+      fn(read());
+      return changes.on(() => fn(read()));
+    },
+  };
+}
+
+/** Changes only: subscribe, but skip the synchronous first call. For code
+ * that reacts to movement rather than consuming values. */
+export function onChange(handle: Handle<unknown>, fn: () => void): () => void {
+  let ready = false;
+  const unsubscribe = handle.subscribe(() => {
+    if (ready) fn();
+  });
+  ready = true;
+  return unsubscribe;
 }
 
 export class Emitter {

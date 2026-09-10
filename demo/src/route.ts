@@ -2,7 +2,7 @@
  * with the browser's hash in both directions, and `selectedDoc` is a link
  * derived from it — retarget by navigating. */
 
-import { derive, type Namespace, type Handle } from "@ninepatch/core";
+import { derive, type Namespace } from "@ninepatch/core";
 import type { Route, Seed } from "./types";
 
 export async function setupRoute(frame: Namespace, seed: Seed): Promise<void> {
@@ -12,13 +12,14 @@ export async function setupRoute(frame: Namespace, seed: Seed): Promise<void> {
     return { docUrl: url.startsWith("automerge:") ? url : seed.notes }; // fall back so the first open succeeds
   };
   frame.mount("location", parse(window.location.hash));
-  const location = (await frame.open<Route>("location")) as Namespace &
-    Handle<Route>;
-  addEventListener("hashchange", () =>
-    location.set(parse(window.location.hash))
+  const location = await frame.open<Route>("location");
+  addEventListener(
+    "hashchange",
+    () => location.set(parse(window.location.hash)),
+    { signal: frame.signal } // the listener goes when the namespace does
   );
-  location.on("change", () =>
-    history.replaceState(null, "", toHash(location.value.docUrl))
+  location.subscribe((route) =>
+    history.replaceState(null, "", toHash(route.docUrl))
   );
   frame.mount(
     "selectedDoc",

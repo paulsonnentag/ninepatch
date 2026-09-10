@@ -15,15 +15,12 @@ export function bindText(
 ): () => void {
   let stopped = false;
 
-  const pull = () => {
+  // Nothing there right now (rule 9) means no call at all: the editor
+  // keeps the last text until something is.
+  const pull = (value: unknown) => {
     if (stopped) return;
-    let value: unknown;
-    try {
-      value = read(source.value, path);
-    } catch {
-      return; // nothing there right now (rule 9); keep the last text until something is
-    }
-    const text = typeof value === "string" ? value : "";
+    const at = read(value, path);
+    const text = typeof at === "string" ? at : "";
     const current = view.state.doc.toString();
     if (text === current) return;
     const [from, to, insert] = splice(current, text);
@@ -47,8 +44,7 @@ export function bindText(
   });
 
   view.dispatch({ effects: StateEffect.appendConfig.of(push) });
-  const unsubscribe = source.on("change", pull);
-  pull();
+  const unsubscribe = source.subscribe(pull); // pulls once now, then on every change
 
   return () => {
     stopped = true;
