@@ -88,6 +88,7 @@ function Item(props: {
   child.mount("dom", el);
   if (item()?.docUrl)
     child.mount("document", field(props.doc, ["items", id, "docUrl"]));
+  else child.unmount("document"); // don't let the canvas's own document leak in
   const process = child.spawn(
     componentName(item()!.componentUrl),
     item()!.componentUrl
