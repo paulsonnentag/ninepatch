@@ -530,8 +530,8 @@ const [hoveredDep, setHoveredDep] = createSignal<{
 }>();
 
 // a process beside its directory's window; hover runs lines to what it has
-// open, click pins them and opens its source in the code column, where
-// the node becomes the tab of its own window
+// open, click pins them and opens the node up into a box of its source in
+// the code column; while open the pill is gone, the box is the node
 function ProcNode(props: {
   process: Process;
   open: boolean;
@@ -675,7 +675,7 @@ function ProcLines() {
   createEffect(() => {
     const p = focusedProc();
     if (!p) return;
-    const chip = document.querySelector(`[data-pid="${p.pid}"]`);
+    const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
     const win = chip?.closest(".window-row")?.querySelector(".window");
     if (!win) return;
     const observer = new ResizeObserver(redraw);
@@ -687,17 +687,20 @@ function ProcLines() {
     bump();
     const p = focusedProc();
     if (!p) return [];
-    const chip = document.querySelector(`[data-pid="${p.pid}"]`);
-    const row = chip?.closest(".window-row");
-    const body = row?.querySelector(".window .window-body");
+    const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
+    const body = chip
+      ?.closest(".window-row")
+      ?.querySelector(".window .window-body");
     if (!chip || !body) return [];
-    const source = document.querySelector(
-      `[data-code-pid="${p.pid}"] .cm-scroller`
+    const box = document.querySelector(
+      `.code-window[data-code-pid="${p.pid}"]`
     );
-    const c = chip.getBoundingClientRect();
+    const source = box?.querySelector(".cm-scroller");
+    // the node: the open box, or the pill in the lane
+    const c = (box ?? chip).getBoundingClientRect();
     const b = body.getBoundingClientRect();
     const s = source?.getBoundingClientRect();
-    const fromChip = { x: c.left, y: c.top + c.height / 2 };
+    const fromChip = { x: c.left, y: c.top + (box ? 16 : c.height / 2) };
     const trunk = (b.right + c.left) / 2; // down the gutter beside the window
     // a preview covers the rows' right side: only the selected entry's line,
     // and it stops at the window's edge

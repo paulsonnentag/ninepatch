@@ -448,12 +448,9 @@ body.resizing {
   color: var(--accent);
 }
 
-.proc.open::before {
-  display: none; /* the code's own lines take over */
-}
-
+/* open, the node is the code box in the column; the pill is gone */
 .proc.open {
-  background: #eef3fd;
+  display: none;
 }
 
 /* one overlay for the whole page: connectors from the focused process
