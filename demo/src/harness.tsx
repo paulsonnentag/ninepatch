@@ -11,6 +11,7 @@ import {
   For,
   from,
   onCleanup,
+  onMount,
   Show,
   splitProps,
   type Accessor,
@@ -24,8 +25,11 @@ import {
   type Process,
 } from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
-import { classHighlighter, highlightTree } from "@lezer/highlight";
-import { render } from "solid-js/web";
+import { syntaxHighlighting } from "@codemirror/language";
+import { EditorState, RangeSetBuilder, Text } from "@codemirror/state";
+import { Decoration, EditorView } from "@codemirror/view";
+import { classHighlighter } from "@lezer/highlight";
+import { Portal, render } from "solid-js/web";
 import { RawEditor } from "./raw-editor";
 import { processes, registerTool } from "./boot";
 
@@ -146,36 +150,25 @@ export function Section(props: {
 // a `dir.open("name")` on a line: the entry that line depends on
 const OPENS = /\.open(?:<[^>]*>)?\(\s*["'`]([^"'`]+)/;
 
-// syntax colours from CodeMirror's parser, one `.line` element per line,
-// tagged with the entry it opens so a dependency line can end on it
-function highlightLines(code: string): JSX.Element[] {
-  const tree = javascript({
-    jsx: true,
-    typescript: true,
-  }).language.parser.parse(code);
-  const lines: JSX.Element[][] = [[]];
-  const push = (text: string, classes?: string) =>
-    text.split("\n").forEach((part, i) => {
-      if (i > 0) lines.push([]);
-      if (part)
-        lines[lines.length - 1].push(
-          classes ? <span class={classes}>{part}</span> : part
-        );
-    });
-  let at = 0;
-  highlightTree(tree, classHighlighter, (from, to, classes) => {
-    if (from > at) push(code.slice(at, from));
-    push(code.slice(from, to), classes);
-    at = to;
-  });
-  if (at < code.length) push(code.slice(at));
-  const raw = code.split("\n");
-  return lines.map((nodes, i) => (
-    <span class="line" data-opens={OPENS.exec(raw[i])?.[1]}>
-      {nodes}
-      {"\n"}
-    </span>
-  ));
+// every line that opens an entry is tagged with it, so the dependency
+// lines can start there and hovering it lights the entry
+function opensDecorations(code: string) {
+  const doc = Text.of(code.split("\n"));
+  const builder = new RangeSetBuilder<Decoration>();
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const name = OPENS.exec(line.text)?.[1];
+    if (name)
+      builder.add(
+        line.from,
+        line.from,
+        Decoration.line({
+          class: "cm-opens",
+          attributes: { "data-opens": name },
+        })
+      );
+  }
+  return EditorView.decorations.of(builder.finish());
 }
 
 // --- the windows --------------------------------------------------------------
@@ -204,21 +197,35 @@ type Registry = Map<Directory, () => void>;
 function Windows(props: { chain: Directory[]; sources: Source[] }) {
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
+  const [column, setColumn] = createSignal<HTMLDivElement>();
+  let tree!: HTMLDivElement;
   mountHighlight();
   mountProcLines();
   trackFocusedUrl();
+  onMount(() => {
+    const observer = new ResizeObserver(bumpLayout);
+    observer.observe(tree);
+    onCleanup(() => observer.disconnect());
+  });
   return (
     <div class="windows" role="tree">
-      <Node
-        chain={props.chain}
-        depth={0}
-        registry={registry}
-        processes={table}
-        sources={props.sources}
-      />
+      <div class="tree" ref={tree}>
+        <Node
+          chain={props.chain}
+          depth={0}
+          registry={registry}
+          processes={table}
+          sources={props.sources}
+          column={column}
+        />
+      </div>
+      <div class="code-column" ref={setColumn} />
     </div>
   );
 }
+
+// the tree changed shape: code windows re-align with their directory window
+const [layout, bumpLayout] = createSignal(0, { equals: false });
 
 // --- selection ------------------------------------------------------------------
 
@@ -274,6 +281,7 @@ function Node(props: {
   registry: Registry;
   processes: Accessor<Process[]>;
   sources: Source[];
+  column: Accessor<HTMLDivElement | undefined>;
 }) {
   const self = props.chain[props.chain.length - 1];
   const probe = tryFork(self);
@@ -302,9 +310,20 @@ function Node(props: {
     procs().length === 0 &&
     (props.depth > 0 ? own().length === 0 : rows().length === 0);
   const [folded, setFolded] = createSignal(props.depth > 0); // nested windows start closed
+  // the body stays while the window animates shut
+  const [bodyShown, setBodyShown] = createSignal(!folded());
+  createEffect(() => {
+    if (!folded()) return setBodyShown(true);
+    const timer = setTimeout(() => setBodyShown(false), FOLD_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
   const [height, setHeight] = createSignal(250);
-  // the process whose source is open beside this window
+  // the process whose source is open in the code column beside this window
   const [code, setCode] = createSignal<Process>();
+  const isLit = (row: EntryRow) => {
+    const dep = hoveredDep();
+    return dep?.name === row.key && procs().some((p) => p.pid === dep.pid);
+  };
   const sourceFor = (p: Process) =>
     props.sources.find((src) => src.name === p.url.split("/").pop());
   let el!: HTMLDivElement;
@@ -374,6 +393,7 @@ function Node(props: {
           registry={props.registry}
           processes={props.processes}
           sources={props.sources}
+          column={props.column}
         />
       )}
     </For>
@@ -383,33 +403,6 @@ function Node(props: {
     <Show when={!transparent()} fallback={below()}>
       <div class="folder-node">
         <div class="window-row">
-          <Show when={code()} keyed>
-            {(p) => (
-              <CodeWindow
-                process={p}
-                source={sourceFor(p)}
-                height={height()}
-                close={() => {
-                  setCode(undefined);
-                  if (pinnedProc() === p) setPinnedProc(undefined);
-                }}
-              />
-            )}
-          </Show>
-          <div class="procs">
-            <For each={procs()}>
-              {(p) => (
-                <ProcNode
-                  process={p}
-                  open={code() === p}
-                  onToggle={() => {
-                    setCode(code() === p ? undefined : p);
-                    setFolded(false); // the lines need rows to land on
-                  }}
-                />
-              )}
-            </For>
-          </div>
           <div
             class="window"
             classList={{
@@ -435,7 +428,7 @@ function Node(props: {
                 <FoldIcon folded={folded()} />
               </button>
             </div>
-            <Show when={!folded()}>
+            <Show when={bodyShown()}>
               <div class="window-body">
                 <div class="entries">
                   <For each={rows()}>
@@ -449,6 +442,7 @@ function Node(props: {
                             selected: isSelected(row),
                             origin: isOrigin(row),
                             twin: isTwin(row, value()),
+                            lit: isLit(row),
                             inherited: row.inherited,
                           }}
                           title={
@@ -487,12 +481,48 @@ function Node(props: {
               <div class="window-grip" onPointerDown={resize} />
             </Show>
           </div>
+          <div class="procs">
+            <For each={procs()}>
+              {(p) => (
+                <ProcNode
+                  process={p}
+                  open={code() === p}
+                  onToggle={() => {
+                    setCode(code() === p ? undefined : p);
+                    setFolded(false); // the lines need rows to land on
+                  }}
+                />
+              )}
+            </For>
+          </div>
+          <Show when={props.column()}>
+            {(column) => (
+              <Show when={code()} keyed>
+                {(p) => (
+                  <Portal mount={column()}>
+                    <CodeWindow
+                      process={p}
+                      source={sourceFor(p)}
+                      anchor={el}
+                      column={column()}
+                      close={() => {
+                        setCode(undefined);
+                        if (pinnedProc() === p) setPinnedProc(undefined);
+                      }}
+                    />
+                  </Portal>
+                )}
+              </Show>
+            )}
+          </Show>
         </div>
         <div class="folder-children">{below()}</div>
       </div>
     </Show>
   );
 }
+
+const FOLD_MS = 250; // matches the height transition in the stylesheet
 
 // --- processes ------------------------------------------------------------
 
@@ -501,8 +531,15 @@ const [hoveredProc, setHoveredProc] = createSignal<Process>();
 const [pinnedProc, setPinnedProc] = createSignal<Process>();
 const focusedProc = () => hoveredProc() ?? pinnedProc();
 
+// the line of code under the pointer opens this entry of this process
+const [hoveredDep, setHoveredDep] = createSignal<{
+  pid: Process["pid"];
+  name: string;
+}>();
+
 // a process beside its directory's window; hover runs lines to what it has
-// open, click pins them and opens its source in a window to the side
+// open, click pins them and opens its source in the code column, where
+// the node becomes the tab of its own window
 function ProcNode(props: {
   process: Process;
   open: boolean;
@@ -531,34 +568,67 @@ function ProcNode(props: {
   );
 }
 
-// the process's source, in a window beside the directory it runs in
+// the process's source, read-only, in the code column level with its
+// directory window and as tall as it
 function CodeWindow(props: {
   process: Process;
   source: Source | undefined;
-  height: number;
+  anchor: HTMLElement;
+  column: HTMLElement;
   close: () => void;
 }) {
+  const code = props.source?.code ?? `// no source for ${props.process.url}`;
+  const box = createMemo(() => {
+    layout();
+    const a = props.anchor.getBoundingClientRect();
+    const c = props.column.getBoundingClientRect();
+    return { top: `${a.top - c.top}px`, height: `${a.height}px` };
+  });
+  let host!: HTMLDivElement;
+  onMount(() => {
+    const view = new EditorView({
+      parent: host,
+      state: EditorState.create({
+        doc: code,
+        extensions: [
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+          javascript({ jsx: true, typescript: true }),
+          syntaxHighlighting(classHighlighter),
+          opensDecorations(code),
+        ],
+      }),
+    });
+    onCleanup(() => view.destroy());
+  });
+  // closed under the pointer: no mouseleave will come
+  onCleanup(() => setHoveredProc((h) => (h === props.process ? undefined : h)));
+  const hover = (e: MouseEvent) => {
+    const line = (e.target as Element).closest?.<HTMLElement>(".cm-opens");
+    const name = line?.dataset.opens;
+    setHoveredDep(name ? { pid: props.process.pid, name } : undefined);
+  };
   return (
     <div
       class="code-window"
       data-code-pid={props.process.pid}
-      style={{ "--height": `${props.height}px` }}
+      style={box()}
+      onMouseEnter={() => setHoveredProc(props.process)}
+      onMouseLeave={() =>
+        setHoveredProc((h) => (h === props.process ? undefined : h))
+      }
     >
-      <div class="titlebar" title={props.process.url}>
-        <span class="window-title">
-          {props.source?.name ?? props.process.url}
-        </span>
-        <button class="fold" title="close" onClick={props.close}>
+      <div class="code-titlebar" title={props.process.url}>
+        <button class="fold code-close" title="close" onClick={props.close}>
           <CloseIcon />
         </button>
       </div>
-      <pre class="source">
-        <code>
-          {highlightLines(
-            props.source?.code ?? `// no source for ${props.process.url}`
-          )}
-        </code>
-      </pre>
+      <div
+        class="code-body"
+        ref={host}
+        onMouseMove={hover}
+        onMouseLeave={() => setHoveredDep(undefined)}
+      />
     </div>
   );
 }
@@ -602,6 +672,12 @@ function ProcLines() {
     onCleanup(unsub);
   });
 
+  createEffect(() => {
+    layout();
+    selections(); // a preview opening or closing changes which lines show
+    requestAnimationFrame(redraw); // after the code windows re-align
+  });
+
   /** The focused window changes size — fold, drag — without scrolling. */
   createEffect(() => {
     const p = focusedProc();
@@ -622,14 +698,22 @@ function ProcLines() {
     const row = chip?.closest(".window-row");
     const body = row?.querySelector(".window .window-body");
     if (!chip || !body) return [];
-    const source = row!.querySelector(`[data-code-pid="${p.pid}"] .source`);
+    const source = document.querySelector(
+      `[data-code-pid="${p.pid}"] .cm-scroller`
+    );
     const c = chip.getBoundingClientRect();
     const b = body.getBoundingClientRect();
     const s = source?.getBoundingClientRect();
-    const fromChip = { x: c.right, y: c.top + c.height / 2 };
-    const trunk = (c.right + b.left) / 2; // down the gutter beside the window
+    const fromChip = { x: c.left, y: c.top + c.height / 2 };
+    const trunk = (b.right + c.left) / 2; // down the gutter beside the window
+    // a preview covers the rows' right side: only the selected entry's line,
+    // and it stops at the window's edge
+    const selected = body.querySelector(".preview")
+      ? body.querySelector(".tree-item.selected")?.getAttribute("data-path")
+      : undefined;
     const out: string[] = [];
     for (const name of opened()) {
+      if (selected !== undefined && name !== selected) continue;
       const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
       if (!item) continue;
       const r = item.getBoundingClientRect();
@@ -639,9 +723,10 @@ function ProcLines() {
       const l = line?.getBoundingClientRect();
       const start =
         l && s && l.bottom >= s.top && l.top <= s.bottom
-          ? { x: s.right, y: l.top + l.height / 2 }
+          ? { x: s.left, y: l.top + l.height / 2 }
           : fromChip;
-      out.push(hook(start, trunk, { x: r.left + 6, y: r.top + r.height / 2 }));
+      const end = selected !== undefined ? b.right : r.right - 6;
+      out.push(hook(start, trunk, { x: end, y: r.top + r.height / 2 }));
     }
     return out;
   });

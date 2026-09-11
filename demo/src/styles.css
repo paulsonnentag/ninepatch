@@ -171,38 +171,104 @@ body.dragging {
   user-select: none;
 }
 
-/* a process's source, in a window beside the directory it runs in */
-.code-window {
-  position: relative;
-  z-index: 1; /* above the tree's tick line */
+/* the inspector is two columns: the directory tree, and beside it the
+   code column, where a process's source opens level with its window */
+.windows {
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
+}
+
+.windows > .tree {
   flex: 1;
   min-width: 0;
-  height: var(--height, 250px);
+}
+
+.code-column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.code-column:empty {
+  display: none;
+}
+
+.code-column > div {
+  display: contents;
+}
+
+.code-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  animation: code-expand 0.25s ease; /* the node wipes out into its window */
+  display: flex;
+  flex-direction: column;
   border: 1px solid #d0d0d0;
-  border-radius: 6px;
+  border-radius: 0 10px 10px 0;
   background: white;
   overflow: hidden;
 }
 
-.code-window .source {
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  background: white;
+@keyframes code-expand {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 
-.code-window .line {
-  display: block;
+.code-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.5rem 0 0.75rem;
+  flex: none;
+  background: linear-gradient(#f4f4f4, #e8e8e8);
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.code-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.code-body .cm-editor {
+  height: 100%;
+  font-size: 0.72rem;
+}
+
+.code-body .cm-scroller {
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  line-height: 1.5;
+}
+
+.code-body .cm-content {
+  padding: 0.5rem 0;
+}
+
+.code-body .cm-line {
+  padding: 0 0.75rem;
 }
 
 /* the lines that open an entry, where the connectors leave the code */
-.code-window .line[data-opens] {
+.code-body .cm-opens {
   background: rgba(37, 99, 235, 0.06);
+}
+
+.code-body .cm-opens:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
+
+/* the entry a hovered line of code opens */
+.tree-item.lit {
+  background: #dbe7fd;
+  color: var(--ink);
 }
 
 /* syntax colours — lezer's classHighlighter names */
@@ -282,6 +348,7 @@ body.dragging {
   display: flex;
   flex-direction: column;
   height: var(--height, 250px);
+  transition: height 0.25s ease;
   border: 1px solid #d0d0d0;
   border-radius: 10px;
   background: white;
@@ -306,7 +373,11 @@ body.dragging {
 }
 
 .window.folded {
-  height: auto;
+  height: calc(2rem + 2px); /* the title bar and the borders */
+}
+
+body.resizing .window {
+  transition: none; /* the grip tracks the pointer directly */
 }
 
 /* drag the bottom edge to make a window taller */
@@ -337,12 +408,12 @@ body.resizing {
   min-width: 0;
 }
 
-/* the gutter left of every window where its processes sit; a fixed width
-   keeps sibling windows in one column */
+/* the lane right of every window where its processes sit; a fixed width
+   keeps the code column flush with every window's lane */
 .procs {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.4rem;
   width: var(--gutter);
   padding-top: 0.35rem; /* level with the title bar */
@@ -354,7 +425,7 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  margin-right: 1.1rem; /* room for the connector */
+  margin-left: 1.1rem; /* room for the connector */
   padding: 0.15rem 0.55rem;
   font: inherit;
   font-size: 0.7rem;
@@ -367,10 +438,10 @@ body.resizing {
 }
 
 /* the connector to the window */
-.proc::after {
+.proc::before {
   content: "";
   position: absolute;
-  right: -1.1rem;
+  left: -1.1rem;
   top: 50%;
   width: 1.1rem;
   height: 1px;
@@ -383,8 +454,21 @@ body.resizing {
   color: var(--accent);
 }
 
+/* open, the node stretches across the lane and becomes the tab of its
+   code window */
+.proc.open::before {
+  display: none; /* the code's own lines take over */
+}
+
 .proc.open {
-  background: #eef3fd;
+  align-self: stretch;
+  margin-top: -0.35rem; /* up to the title bar's top edge */
+  margin-right: -1px;
+  height: 2rem;
+  z-index: 2;
+  border-radius: 10px 0 0 10px;
+  border-right: none;
+  background: linear-gradient(#f4f4f4, #e8e8e8);
 }
 
 /* one overlay for the whole page: connectors from the focused process
@@ -456,7 +540,7 @@ body.resizing {
    down from it */
 .folder-node {
   --tick: 1rem;
-  --gutter: 7rem;
+  --gutter: 6.5rem;
   min-width: 0;
 }
 
@@ -500,7 +584,7 @@ body.resizing {
   position: absolute;
   left: calc(-1 * var(--tick));
   top: 1rem;
-  width: calc(var(--tick) + var(--gutter) - 1px);
+  width: calc(var(--tick) - 1px);
   border-top: 1px solid #c8c8cc;
 }
 
