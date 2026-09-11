@@ -6,10 +6,11 @@
  * nodes beside them for what runs in them. */
 
 import { frame, moduleUrl, seed } from "./boot";
-import { Mount, Section } from "./harness";
+import { createComponent, Section } from "./harness";
 import todosSource from "./tools/todos.tsx?raw";
 import chatSource from "./tools/chat.tsx?raw";
-import cardsSource from "./tools/cards.tsx?raw";
+import canvasSource from "./tools/canvas.tsx?raw";
+import placeSource from "./tools/place.tsx?raw";
 import mapSource from "./tools/map.tsx?raw";
 import placesSource from "./tools/places.ts?raw";
 import routeSource from "./tools/route.ts?raw";
@@ -24,11 +25,20 @@ const chat = frame.fork("chat");
 
 const root = frame.fork("root"); // "root" loosely: the canvas section's world
 root.mount("selection", null as string | null); // a plain value; never touches a document
-await root.spawn("Places", moduleUrl("places.ts")).terminated; // mounts `places`, derived from the cards
-const selection = await root.open<string | null>("selection"); // the host clears it on board clicks
+await root.spawn("Places", moduleUrl("places.ts")).terminated; // follows the items' docs, mounts `places`
 
 const browser = frame.fork("browser");
 await browser.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `url` and `selectedDoc`
+
+// --- the tools, as components: every extra prop is a mounted entry -----------
+
+const Todos = createComponent<{ doc: string }>(moduleUrl("todos.tsx"));
+const Chat = createComponent<{ doc: string; user: string }>(
+  moduleUrl("chat.tsx")
+);
+const Canvas = createComponent<{ doc: string }>(moduleUrl("canvas.tsx"));
+const UrlBar = createComponent(moduleUrl("urlbar.tsx"));
+const Markdown = createComponent(moduleUrl("markdown.tsx"));
 
 // --- the page -----------------------------------------------------------------
 
@@ -57,12 +67,7 @@ export function Page() {
           </p>
         }
       >
-        <Mount
-          dir={todos}
-          name="Todos"
-          url={moduleUrl("todos.tsx")}
-          mount={{ doc: seed.todos }}
-        />
+        <Todos dir={todos} doc={seed.todos} />
       </Section>
 
       <Section
@@ -78,18 +83,8 @@ export function Page() {
         }
       >
         <div class="row">
-          <Mount
-            dir={chat}
-            name="Alice"
-            url={moduleUrl("chat.tsx")}
-            mount={{ doc: seed.chat, user: seed.alice }}
-          />
-          <Mount
-            dir={chat}
-            name="Bob"
-            url={moduleUrl("chat.tsx")}
-            mount={{ doc: seed.chat, user: seed.bob }}
-          />
+          <Chat dir={chat} name="Alice" doc={seed.chat} user={seed.alice} />
+          <Chat dir={chat} name="Bob" doc={seed.chat} user={seed.bob} />
         </div>
       </Section>
 
@@ -97,33 +92,22 @@ export function Page() {
         title="Canvas and map"
         chain={[frame, root]}
         sources={[
-          { name: "cards.tsx", code: cardsSource },
+          { name: "canvas.tsx", code: canvasSource },
+          { name: "place.tsx", code: placeSource },
           { name: "map.tsx", code: mapSource },
           { name: "places.ts", code: placesSource },
         ]}
         prose={
           <p>
-            Location cards and a real map share one canvas and one{" "}
-            <code>selection</code> entry, a <code>Places</code> process derives{" "}
-            <code>places</code> from the cards document, and typing a place into
-            a card geocodes it onto the map.
+            The canvas document stores a <code>componentUrl</code>, a{" "}
+            <code>docUrl</code>, and a position per item, so the canvas only
+            drags wrappers and spawns whatever the document names: every place
+            card is its own process editing its own document, and the map is
+            just another component on the canvas.
           </p>
         }
       >
-        <div
-          class="board"
-          onPointerDown={(e) => {
-            if (e.target === e.currentTarget) selection.set(null); // beside the cards: clear
-          }}
-        >
-          <Mount dir={root} name="Map" url={moduleUrl("map.tsx")} />
-          <Mount
-            dir={root}
-            name="Cards"
-            url={moduleUrl("cards.tsx")}
-            mount={{ doc: seed.canvas }}
-          />
-        </div>
+        <Canvas dir={root} doc={seed.canvas} />
       </Section>
 
       <Section
@@ -150,14 +134,10 @@ export function Page() {
               <i />
               <i />
             </span>
-            <Mount dir={browser} name="UrlBar" url={moduleUrl("urlbar.tsx")} />
+            <UrlBar dir={browser} />
           </div>
           <div class="browser-page">
-            <Mount
-              dir={browser}
-              name="Markdown"
-              url={moduleUrl("markdown.tsx")}
-            />
+            <Markdown dir={browser} />
           </div>
         </div>
       </Section>

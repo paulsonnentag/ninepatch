@@ -4,10 +4,12 @@ import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-networ
 import { createDirectory, field, fromDoc, type Main } from "@ninepatch/core";
 import type {
   CanvasDoc,
+  CanvasItem,
   ChatDoc,
   ContactDoc,
   Folder,
   MarkdownDoc,
+  PlaceDoc,
   Seed,
   TodoDoc,
 } from "./types";
@@ -28,11 +30,22 @@ export function moduleUrl(name: string): string {
   return `./tools/${name}`;
 }
 
+// Mount functions registered under synthetic urls, so a plain function
+// can be spawned like any module — `createComponent` uses this.
+const registered = new Map<string, { default: Main }>();
+
+export function registerTool(name: string, main: Main): string {
+  const url = `tool:${name}`;
+  registered.set(url, { default: main });
+  return url;
+}
+
 const root = createDirectory({
-  import: (url) =>
-    (modules[url] ?? (() => import(/* @vite-ignore */ url)))() as Promise<{
+  import: async (url) =>
+    registered.get(url) ??
+    ((modules[url] ?? (() => import(/* @vite-ignore */ url)))() as Promise<{
       default: Main;
-    }>,
+    }>),
 });
 
 /** The process table — the root's alone. The page keeps the root here and
@@ -69,11 +82,26 @@ async function findOrCreateSeed(): Promise<Seed> {
     const alice = repo.create<ContactDoc>({ name: "Alice", color: "#e11d48" });
     const bob = repo.create<ContactDoc>({ name: "Bob", color: "#2563eb" });
     const chat = repo.create<ChatDoc>({ messages: [] });
+    // Every place is its own document; the canvas doc only stores which
+    // component renders each item, which document it edits, and where.
     const canvas = repo.create<CanvasDoc>({
-      cards: {
-        berlin: { x: 30, y: 24, title: "Berlin", lat: 52.5, lng: 13.4 },
-        tokyo: { x: 250, y: 90, title: "Tokyo", lat: 35.7, lng: 139.7 },
-        somewhere: { x: 120, y: 190, title: "Somewhere" },
+      items: {
+        berlin: placeItem(
+          repo.create<PlaceDoc>({ title: "Berlin", lat: 52.5, lng: 13.4 }).url,
+          24,
+          20
+        ),
+        tokyo: placeItem(
+          repo.create<PlaceDoc>({ title: "Tokyo", lat: 35.7, lng: 139.7 }).url,
+          56,
+          130
+        ),
+        somewhere: placeItem(
+          repo.create<PlaceDoc>({ title: "Somewhere" }).url,
+          96,
+          240
+        ),
+        map: { componentUrl: "./tools/map.tsx", x: 210, y: 16 },
       },
     });
     const notes2 = repo.create<MarkdownDoc>({ content: "" });
@@ -103,6 +131,35 @@ async function findOrCreateSeed(): Promise<Seed> {
     folder.change((d) => (d.todos = todos.url));
   }
   const docs = folder.doc();
+  type LegacyCanvas = CanvasDoc & {
+    cards?: Record<
+      string,
+      { x: number; y: number; title: string; lat?: number; lng?: number }
+    >;
+  };
+  const canvas = await repo.find<LegacyCanvas>(docs.canvas as AnyDocumentId);
+  if (!canvas.doc().items) {
+    // seeded before items carried componentUrl/docUrl: each card becomes
+    // its own document, the canvas keeps only the wiring
+    const items: Record<string, CanvasItem> = {
+      map: { componentUrl: "./tools/map.tsx", x: 210, y: 16 },
+    };
+    for (const [id, card] of Object.entries(canvas.doc().cards ?? {})) {
+      const doc =
+        card.lat !== undefined && card.lng !== undefined
+          ? repo.create<PlaceDoc>({
+              title: card.title,
+              lat: card.lat,
+              lng: card.lng,
+            })
+          : repo.create<PlaceDoc>({ title: card.title });
+      items[id] = placeItem(doc.url, card.x, card.y);
+    }
+    canvas.change((d) => {
+      d.items = items;
+      delete d.cards;
+    });
+  }
   const notes = await repo.find<MarkdownDoc>(docs.notes as AnyDocumentId);
   if (!notes.doc().content.includes("/automerge:")) {
     // seeded before the notes linked to each other
@@ -124,4 +181,8 @@ async function findOrCreateSeed(): Promise<Seed> {
     alice: docs.alice,
     bob: docs.bob,
   };
+}
+
+function placeItem(docUrl: string, x: number, y: number): CanvasItem {
+  return { componentUrl: "./tools/place.tsx", docUrl, x, y };
 }

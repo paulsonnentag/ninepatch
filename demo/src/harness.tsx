@@ -1,9 +1,9 @@
-/** The page furniture: the host side of a tool (`Mount`), and a section —
- * prose plus three panels: the live example, the code behind it in tabs,
- * and the directories it runs in, drawn as a file window: the hierarchy
- * of directories as windows with their entries as files, the processes
- * running at each one as nodes beside its window, and a preview of
- * whatever is selected. Handles feed Solid through
+/** The page furniture: tools as Solid components (`createComponent`),
+ * and a section — prose plus three panels: the live example, the code
+ * behind it in tabs, and the directories it runs in, drawn as a file
+ * window: the hierarchy of directories as windows with their entries as
+ * files, the processes running at each one as nodes beside its window,
+ * and a preview of whatever is selected. Handles feed Solid through
  * `from()`: a handle is a store. */
 
 import {
@@ -16,6 +16,7 @@ import {
   from,
   onCleanup,
   Show,
+  splitProps,
   type Accessor,
   type JSX,
 } from "solid-js";
@@ -23,46 +24,53 @@ import {
   hasScheme,
   type Handle,
   type Directory,
+  type Main,
   type Process,
 } from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
 import { render } from "solid-js/web";
 import { RawEditor } from "./raw-editor";
-import { processes } from "./boot";
+import { processes, registerTool } from "./boot";
 
 export type Source = { name: string; code: string };
 
-/** The host side of a tool, spelled out: fork the section's directory
- * under `name`, mount what the tool should see plus this element as
- * `dom`, spawn the module, close on cleanup. A tool that rejects — an
- * entry it needed isn't there — says so in its slot. */
-export function Mount(props: {
-  dir: Directory;
-  name: string;
-  url: string;
-  mount?: Record<string, unknown>;
-  unmount?: string[];
-}) {
-  const dir = props.dir.fork(props.name);
-  const el = (<div class="tool" />) as HTMLDivElement;
-  for (const [path, what] of Object.entries(props.mount ?? {}))
-    dir.mount(path, what);
-  for (const path of props.unmount ?? []) dir.unmount(path);
-  dir.mount("dom", el);
-  const tool = props.url
+/** A tool as a Solid component. `createComponent(url)` bakes the module
+ * in; the component forks `dir` under `name`, mounts every other prop as
+ * an entry plus its own element as `dom`, spawns the module, and closes
+ * on cleanup. A tool that rejects — an entry it needed isn't there —
+ * says so in its slot. Given a mount function instead of a url, it is
+ * registered with the loader under `tool:<name>` and still runs as a
+ * real process. */
+export function createComponent<
+  Props extends Record<string, unknown> = Record<never, never>,
+>(tool: string | Main, name?: string) {
+  const url =
+    typeof tool === "string" ? tool : registerTool(name ?? tool.name, tool);
+  const fallback = componentName(url);
+  return function Component(props: Props & { dir: Directory; name?: string }) {
+    const [own, mounts] = splitProps(props, ["dir", "name"]);
+    const dir = own.dir.fork(own.name ?? fallback);
+    const el = (<div class="tool" />) as HTMLDivElement;
+    for (const [entry, value] of Object.entries(mounts))
+      dir.mount(entry, value);
+    dir.mount("dom", el);
+    const process = dir.spawn(fallback, url); // the node reads as the tool, the window as the instance
+    process.terminated.catch((e: unknown) => {
+      if (!dir.signal.aborted) el.textContent = String(e);
+    });
+    onCleanup(() => dir.close());
+    return el;
+  };
+}
+
+function componentName(url: string): string {
+  const base = url
     .split("/")
     .pop()!
+    .replace(/^tool:/, "")
     .replace(/\.tsx?$/, "");
-  const process = dir.spawn(
-    tool[0].toUpperCase() + tool.slice(1), // chat.tsx runs as "Chat"
-    props.url
-  );
-  process.terminated.catch((e: unknown) => {
-    if (!dir.signal.aborted) el.textContent = String(e);
-  });
-  onCleanup(() => dir.close());
-  return el;
+  return base[0].toUpperCase() + base.slice(1); // chat.tsx runs as "Chat"
 }
 
 /** A section: title and prose at reading width, then a band across the
@@ -285,9 +293,24 @@ function Node(props: {
   const rows = createRows(props.chain);
   const own = () => rows().filter((row) => !row.inherited);
   const kids = from(self.children, self.children.value);
-  const children = () => kids().filter((c) => c !== probe);
   /** What runs here — drawn beside the window, never inside it. */
   const procs = () => props.processes().filter((p) => p.at === self);
+  /** What those processes forked: their views share this directory's
+   * namespace, so their forks belong under this window. Their opens
+   * (path ≠ []) stay internal, like the probe's. */
+  const [procKids, setProcKids] = createSignal<Directory[]>([]);
+  createEffect(() => {
+    const running = procs();
+    const collect = () =>
+      setProcKids(
+        running.flatMap((p) =>
+          p.dir.children.value.filter((c) => c.path.length === 0)
+        )
+      );
+    const unsubs = running.map((p) => p.dir.children.subscribe(collect));
+    onCleanup(() => unsubs.forEach((u) => u()));
+  });
+  const children = () => [...kids().filter((c) => c !== probe), ...procKids()];
   /** Nothing to show: below the top, a directory that mounted nothing and
    * runs nothing; at the top, one with nothing to list at all. */
   const transparent = () =>
