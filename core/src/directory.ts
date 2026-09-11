@@ -605,13 +605,19 @@ class Watch {
     let terminal: Handle<unknown> | undefined;
     try {
       const { result, fired: requests } = await resolveWithFills(this.dir, []);
-      if (generation !== this.generation || this.stopped) return;
+      if (generation !== this.generation || this.stopped) {
+        this.handleFired ||= fired; // superseded mid-await: the newer run reports it
+        return;
+      }
       this.dir.hold(this.dir, requests);
       terminal = result.handle;
     } catch {
       terminal = undefined;
     }
-    if (generation !== this.generation || this.stopped) return;
+    if (generation !== this.generation || this.stopped) {
+      this.handleFired ||= fired;
+      return;
+    }
     this.resubscribe(this.safeWalk());
     const changed = fired || terminal !== this.lastTerminal;
     this.lastTerminal = terminal;
