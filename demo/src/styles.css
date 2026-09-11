@@ -206,9 +206,30 @@ body.dragging {
   display: flex;
   flex-direction: column;
   border: 1px solid #d0d0d0;
-  border-radius: 0 10px 10px 0;
+  border-radius: 10px;
   background: white;
   overflow: hidden;
+}
+
+.code-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.5rem 0 0.75rem;
+  flex: none;
+  background: linear-gradient(#f4f4f4, #e8e8e8);
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.code-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #444;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .code-body {
@@ -427,22 +448,12 @@ body.resizing {
   color: var(--accent);
 }
 
-/* open, the node stretches across the lane and becomes the tab of its
-   code window */
 .proc.open::before {
   display: none; /* the code's own lines take over */
 }
 
 .proc.open {
-  align-self: stretch;
-  margin-top: -0.35rem; /* up to the title bar's top edge */
-  margin-right: -1px;
-  height: 2rem;
-  z-index: 2;
-  border-radius: 10px 0 0 10px;
-  border-right: none;
-  border-color: #d0d0d0;
-  background: white;
+  background: #eef3fd;
 }
 
 /* one overlay for the whole page: connectors from the focused process

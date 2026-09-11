@@ -499,6 +499,10 @@ function Node(props: {
                       source={sourceFor(p)}
                       anchor={el}
                       column={column()}
+                      close={() => {
+                        setCode(undefined);
+                        if (pinnedProc() === p) setPinnedProc(undefined);
+                      }}
                     />
                   </Portal>
                 )}
@@ -557,12 +561,13 @@ function ProcNode(props: {
 }
 
 // the process's source, read-only, in the code column level with its
-// directory window and as tall as it; the node is its tab and closes it
+// directory window and as tall as it
 function CodeWindow(props: {
   process: Process;
   source: Source | undefined;
   anchor: HTMLElement;
   column: HTMLElement;
+  close: () => void;
 }) {
   const code = props.source?.code ?? `// no source for ${props.process.url}`;
   const box = createMemo(() => {
@@ -605,14 +610,27 @@ function CodeWindow(props: {
         setHoveredProc((h) => (h === props.process ? undefined : h))
       }
     >
+      <div class="code-titlebar" title={props.process.url}>
+        <span class="code-title">{props.process.name}</span>
+        <button class="fold code-close" title="close" onClick={props.close}>
+          <CloseIcon />
+        </button>
+      </div>
       <div
         class="code-body"
         ref={host}
-        title={props.process.url}
         onMouseMove={hover}
         onMouseLeave={() => setHoveredDep(undefined)}
       />
     </div>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg class="icon fold-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+    </svg>
   );
 }
 
