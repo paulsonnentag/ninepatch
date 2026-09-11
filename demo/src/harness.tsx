@@ -682,6 +682,7 @@ function ProcLines() {
     const all = table().flatMap((p) =>
       linesFor(p, opened().get(p) ?? []).map((line) => ({
         d: line.d,
+        ends: line.ends,
         pid: p.pid,
         focused:
           p === proc ||
@@ -696,13 +697,25 @@ function ProcLines() {
   return (
     <svg class="proc-lines" aria-hidden="true">
       <For each={lines()}>
-        {(line) => <path d={line.d} classList={{ focused: line.focused }} />}
+        {(line) => (
+          <g classList={{ focused: line.focused }}>
+            <path d={line.d} />
+            <For each={line.ends}>
+              {(end) => <circle cx={end.x} cy={end.y} r="2.5" />}
+            </For>
+          </g>
+        )}
       </For>
     </svg>
   );
 }
 
-type Line = { d: string; name?: string; item?: Element };
+type Line = {
+  d: string;
+  ends: [Point, Point]; // a dot at each end
+  name?: string;
+  item?: Element;
+};
 
 // a process's lines: from its node, or the code lines in its open box, down
 // the lane and into the rows it has open
@@ -717,7 +730,9 @@ function linesFor(p: Process, names: string[]): Line[] {
     if (!box) return [];
     const w = win.getBoundingClientRect();
     const c = box.getBoundingClientRect();
-    return [{ d: `M ${w.right} ${w.top + 16} L ${c.left} ${c.top + 16}` }];
+    const from = { x: w.right, y: w.top + 16 };
+    const to = { x: c.left, y: c.top + 16 };
+    return [{ d: `M ${from.x} ${from.y} L ${to.x} ${to.y}`, ends: [from, to] }];
   }
   const source = box?.querySelector(".cm-scroller");
   // the node: the open box, or the pill in the lane
@@ -745,9 +760,11 @@ function linesFor(p: Process, names: string[]): Line[] {
       l && s && l.bottom >= s.top && l.top <= s.bottom
         ? { x: s.left, y: l.top + l.height / 2 }
         : fromChip;
-    const end = selected !== undefined ? b.right : r.right - 6;
-    const d = hook(start, trunk, { x: end, y: r.top + r.height / 2 });
-    out.push({ d, name, item });
+    const end = {
+      x: selected !== undefined ? b.right : r.right - 6,
+      y: r.top + r.height / 2,
+    };
+    out.push({ d: hook(start, trunk, end), ends: [start, end], name, item });
   }
   return out;
 }

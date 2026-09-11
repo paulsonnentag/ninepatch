@@ -279,12 +279,6 @@ body.dragging {
   background: rgba(37, 99, 235, 0.14);
 }
 
-/* the entry a hovered line of code opens */
-.tree-item.lit {
-  background: #dbe7fd;
-  color: var(--ink);
-}
-
 /* syntax colours — lezer's classHighlighter names */
 .tok-keyword {
   color: #a626a4;
@@ -489,8 +483,16 @@ body.resizing {
   stroke-linecap: round;
 }
 
-.proc-lines path.focused {
+.proc-lines circle {
+  fill: #c8c8cc;
+}
+
+.proc-lines .focused path {
   stroke: var(--accent);
+}
+
+.proc-lines .focused circle {
+  fill: var(--accent);
 }
 
 .window.folded .titlebar {
@@ -635,6 +637,13 @@ body.resizing {
 
 .tree-item.inherited:hover {
   background: #efeff1;
+}
+
+/* the entry a hovered line of code opens */
+.tree-item.lit,
+.tree-item.inherited.lit {
+  background: #dbe7fd;
+  color: var(--ink);
 }
 
 /* a selection in a window that isn't focused waits in gray */
