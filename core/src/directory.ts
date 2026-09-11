@@ -27,6 +27,9 @@ export type Directory = {
   /** The name given to fork() or spawn(); for open(), the path opened;
    * "root" for createDirectory(). A label, nothing more. */
   readonly name: string;
+  /** The path this directory was opened at, relative to what it was
+   * opened from — `[]` for a fork or a process view. */
+  readonly path: readonly string[];
   /** This directory's own entries — what it mounted, was served, or cut.
    * Says nothing about what it inherits. Read-only. */
   readonly entries: Handle<Entry[]>;
@@ -491,6 +494,10 @@ class FromView {
 
   get name(): string {
     return this.requester.name;
+  }
+
+  get path(): readonly string[] {
+    return this.requester.path;
   }
 
   get children(): Handle<DirectoryImpl[]> {

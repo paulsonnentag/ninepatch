@@ -165,6 +165,8 @@ type Server = {
 type Directory = {
   /** fork()'s name, open()'s path joined, or "root". A label. */
   readonly name: string
+  /** The path it was opened at — `[]` for a fork or a process view. */
+  readonly path: readonly string[]
   /** Own entries only: mounts, fills, cuts. Nothing inherited. */
   readonly entries: Handle<Entry[]>
   /** Opened or forked from here and still open. */
