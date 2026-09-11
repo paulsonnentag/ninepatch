@@ -84,13 +84,11 @@ pre {
   max-height: 40rem; /* taller content scrolls inside the panes */
 }
 
-.panel.example,
-.panel.code {
+.panel.example {
   position: relative;
 }
 
-.panel.example .panel-body,
-.panel.code .panel-body {
+.panel.example .panel-body {
   position: absolute;
   top: 1.55rem; /* the label row */
   left: 0;
@@ -149,12 +147,6 @@ pre {
   background: var(--pane);
 }
 
-.panel.code .panel-body {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-}
-
 /* a hairline between panes; the grab zone is wider than the line */
 .divider {
   position: relative;
@@ -179,37 +171,22 @@ body.dragging {
   user-select: none;
 }
 
-.tabs {
+/* a process's source, in a window beside the directory it runs in */
+.code-window {
+  position: relative;
+  z-index: 1; /* above the tree's tick line */
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  flex: none;
-}
-
-.tab {
-  border: none;
-  border-right: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  padding: 0.4rem 0.8rem;
-  font:
-    0.75rem ui-monospace,
-    monospace;
-  color: var(--faint);
-  white-space: nowrap;
-}
-
-.tab:hover {
-  background: #e8e8e8;
-}
-
-.tab.active {
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: var(--height, 250px);
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
   background: white;
-  color: var(--ink);
+  overflow: hidden;
 }
 
-.panel.code .source {
+.code-window .source {
   margin: 0;
   border: none;
   border-radius: 0;
@@ -217,6 +194,15 @@ body.dragging {
   min-height: 0;
   overflow: auto;
   background: white;
+}
+
+.code-window .line {
+  display: block;
+}
+
+/* the lines that open an entry, where the connectors leave the code */
+.code-window .line[data-opens] {
+  background: rgba(37, 99, 235, 0.06);
 }
 
 /* syntax colours — lezer's classHighlighter names */
@@ -351,11 +337,14 @@ body.resizing {
   min-width: 0;
 }
 
+/* the gutter left of every window where its processes sit; a fixed width
+   keeps sibling windows in one column */
 .procs {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 0.4rem;
+  width: var(--gutter);
   padding-top: 0.35rem; /* level with the title bar */
   flex: none;
 }
@@ -365,7 +354,7 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  margin-left: 1.1rem; /* room for the connector */
+  margin-right: 1.1rem; /* room for the connector */
   padding: 0.15rem 0.55rem;
   font: inherit;
   font-size: 0.7rem;
@@ -378,19 +367,24 @@ body.resizing {
 }
 
 /* the connector to the window */
-.proc::before {
+.proc::after {
   content: "";
   position: absolute;
-  left: -1.1rem;
+  right: -1.1rem;
   top: 50%;
   width: 1.1rem;
   height: 1px;
   background: #c8c8cc;
 }
 
-.proc.focused {
+.proc.focused,
+.proc.open {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.proc.open {
+  background: #eef3fd;
 }
 
 /* one overlay for the whole page: connectors from the focused process
@@ -450,10 +444,19 @@ body.resizing {
   white-space: nowrap;
 }
 
+/* what a closed window is hiding */
+.window-count {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
 /* a directory's window, and the windows below it hanging off a line drawn
    down from it */
 .folder-node {
   --tick: 1rem;
+  --gutter: 7rem;
   min-width: 0;
 }
 
@@ -497,7 +500,7 @@ body.resizing {
   position: absolute;
   left: calc(-1 * var(--tick));
   top: 1rem;
-  width: calc(var(--tick) - 1px);
+  width: calc(var(--tick) + var(--gutter) - 1px);
   border-top: 1px solid #c8c8cc;
 }
 

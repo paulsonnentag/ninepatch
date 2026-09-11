@@ -75,16 +75,8 @@ export function Section(props: {
   reset?: () => void;
   children: JSX.Element;
 }) {
-  const [widths, setWidths] = createSignal([1, 1, 1]);
-  const [tab, setTab] = createSignal(0);
+  const [widths, setWidths] = createSignal([1, 2]);
   let band!: HTMLDivElement;
-
-  /** A process node was clicked: show its source. */
-  const showSource = (p: Process) => {
-    const name = p.url.split("/").pop();
-    const index = props.sources.findIndex((s) => s.name === name);
-    if (index >= 0) setTab(index);
-  };
 
   // a divider drag moves width between its neighbours, in fractions
   const drag = (index: number, e: PointerEvent) => {
@@ -141,16 +133,9 @@ export function Section(props: {
         </div>
         <div class="divider" onPointerDown={[drag, 0]} />
         <div class="panel context">
-          <h3>data</h3>
+          <h3>inspector</h3>
           <div class="panel-body">
-            <Windows chain={props.chain} onFocusProcess={showSource} />
-          </div>
-        </div>
-        <div class="divider" onPointerDown={[drag, 1]} />
-        <div class="panel code">
-          <h3>code</h3>
-          <div class="panel-body">
-            <Tabs sources={props.sources} active={tab()} onSelect={setTab} />
+            <Windows chain={props.chain} sources={props.sources} />
           </div>
         </div>
       </div>
@@ -158,49 +143,39 @@ export function Section(props: {
   );
 }
 
-function Tabs(props: {
-  sources: Source[];
-  active: number;
-  onSelect: (index: number) => void;
-}) {
-  return (
-    <>
-      <div class="tabs" role="tablist">
-        <For each={props.sources}>
-          {(source, i) => (
-            <button
-              role="tab"
-              class="tab"
-              classList={{ active: props.active === i() }}
-              onClick={() => props.onSelect(i())}
-            >
-              {source.name}
-            </button>
-          )}
-        </For>
-      </div>
-      <pre class="source">
-        <code>{highlight(props.sources[props.active]?.code ?? "")}</code>
-      </pre>
-    </>
-  );
-}
+// a `dir.open("name")` on a line: the entry that line depends on
+const OPENS = /\.open(?:<[^>]*>)?\(\s*["'`]([^"'`]+)/;
 
-// syntax colours from CodeMirror's parser, as static `tok-*` spans
-function highlight(code: string): JSX.Element[] {
+// syntax colours from CodeMirror's parser, one `.line` element per line,
+// tagged with the entry it opens so a dependency line can end on it
+function highlightLines(code: string): JSX.Element[] {
   const tree = javascript({
     jsx: true,
     typescript: true,
   }).language.parser.parse(code);
-  const out: JSX.Element[] = [];
+  const lines: JSX.Element[][] = [[]];
+  const push = (text: string, classes?: string) =>
+    text.split("\n").forEach((part, i) => {
+      if (i > 0) lines.push([]);
+      if (part)
+        lines[lines.length - 1].push(
+          classes ? <span class={classes}>{part}</span> : part
+        );
+    });
   let at = 0;
   highlightTree(tree, classHighlighter, (from, to, classes) => {
-    if (from > at) out.push(code.slice(at, from));
-    out.push(<span class={classes}>{code.slice(from, to)}</span>);
+    if (from > at) push(code.slice(at, from));
+    push(code.slice(from, to), classes);
     at = to;
   });
-  if (at < code.length) out.push(code.slice(at));
-  return out;
+  if (at < code.length) push(code.slice(at));
+  const raw = code.split("\n");
+  return lines.map((nodes, i) => (
+    <span class="line" data-opens={OPENS.exec(raw[i])?.[1]}>
+      {nodes}
+      {"\n"}
+    </span>
+  ));
 }
 
 // --- the windows --------------------------------------------------------------
@@ -226,10 +201,7 @@ type Registry = Map<Directory, () => void>;
 
 // one window per directory, processes as nodes beside them; one selection
 // for the whole tree, so picking in one window closes the others
-function Windows(props: {
-  chain: Directory[];
-  onFocusProcess?: (p: Process) => void;
-}) {
+function Windows(props: { chain: Directory[]; sources: Source[] }) {
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
   mountHighlight();
@@ -242,7 +214,7 @@ function Windows(props: {
         depth={0}
         registry={registry}
         processes={table}
-        onFocusProcess={props.onFocusProcess}
+        sources={props.sources}
       />
     </div>
   );
@@ -301,7 +273,7 @@ function Node(props: {
   depth: number;
   registry: Registry;
   processes: Accessor<Process[]>;
-  onFocusProcess?: (p: Process) => void;
+  sources: Source[];
 }) {
   const self = props.chain[props.chain.length - 1];
   const probe = tryFork(self);
@@ -329,8 +301,12 @@ function Node(props: {
   const transparent = () =>
     procs().length === 0 &&
     (props.depth > 0 ? own().length === 0 : rows().length === 0);
-  const [folded, setFolded] = createSignal(false);
+  const [folded, setFolded] = createSignal(props.depth > 0); // nested windows start closed
   const [height, setHeight] = createSignal(250);
+  // the process whose source is open beside this window
+  const [code, setCode] = createSignal<Process>();
+  const sourceFor = (p: Process) =>
+    props.sources.find((src) => src.name === p.url.split("/").pop());
   let el!: HTMLDivElement;
 
   // the bottom edge drags, never shorter than the title bar and a few rows
@@ -397,7 +373,7 @@ function Node(props: {
           depth={transparent() ? props.depth : props.depth + 1}
           registry={props.registry}
           processes={props.processes}
-          onFocusProcess={props.onFocusProcess}
+          sources={props.sources}
         />
       )}
     </For>
@@ -407,6 +383,33 @@ function Node(props: {
     <Show when={!transparent()} fallback={below()}>
       <div class="folder-node">
         <div class="window-row">
+          <Show when={code()} keyed>
+            {(p) => (
+              <CodeWindow
+                process={p}
+                source={sourceFor(p)}
+                height={height()}
+                close={() => {
+                  setCode(undefined);
+                  if (pinnedProc() === p) setPinnedProc(undefined);
+                }}
+              />
+            )}
+          </Show>
+          <div class="procs">
+            <For each={procs()}>
+              {(p) => (
+                <ProcNode
+                  process={p}
+                  open={code() === p}
+                  onToggle={() => {
+                    setCode(code() === p ? undefined : p);
+                    setFolded(false); // the lines need rows to land on
+                  }}
+                />
+              )}
+            </For>
+          </div>
           <div
             class="window"
             classList={{
@@ -420,6 +423,9 @@ function Node(props: {
           >
             <div class="titlebar" title={self.name}>
               <span class="window-title">{label(self.name)}</span>
+              <Show when={folded()}>
+                <span class="window-count">{rows().length} entries</span>
+              </Show>
               <button
                 class="fold"
                 title={folded() ? "expand" : "minimize"}
@@ -481,13 +487,6 @@ function Node(props: {
               <div class="window-grip" onPointerDown={resize} />
             </Show>
           </div>
-          <Show when={procs().length > 0}>
-            <div class="procs">
-              <For each={procs()}>
-                {(p) => <ProcNode process={p} onFocus={props.onFocusProcess} />}
-              </For>
-            </div>
-          </Show>
         </div>
         <div class="folder-children">{below()}</div>
       </div>
@@ -502,9 +501,13 @@ const [hoveredProc, setHoveredProc] = createSignal<Process>();
 const [pinnedProc, setPinnedProc] = createSignal<Process>();
 const focusedProc = () => hoveredProc() ?? pinnedProc();
 
-// a process beside its directory's window; hover or click runs lines to
-// what it has open, click also shows its source
-function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
+// a process beside its directory's window; hover runs lines to what it has
+// open, click pins them and opens its source in a window to the side
+function ProcNode(props: {
+  process: Process;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const p = props.process;
   onCleanup(() => {
     if (pinnedProc() === p) setPinnedProc(undefined);
@@ -513,18 +516,58 @@ function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
   return (
     <button
       class="proc"
-      classList={{ focused: focusedProc() === p }}
+      classList={{ focused: focusedProc() === p, open: props.open }}
       data-pid={p.pid}
       title={p.url}
       onMouseEnter={() => setHoveredProc(p)}
       onMouseLeave={() => setHoveredProc((h) => (h === p ? undefined : h))}
       onClick={() => {
-        setPinnedProc(pinnedProc() === p ? undefined : p);
-        props.onFocus?.(p);
+        setPinnedProc(props.open ? undefined : p);
+        props.onToggle();
       }}
     >
       <span class="proc-name">{p.name}</span>
     </button>
+  );
+}
+
+// the process's source, in a window beside the directory it runs in
+function CodeWindow(props: {
+  process: Process;
+  source: Source | undefined;
+  height: number;
+  close: () => void;
+}) {
+  return (
+    <div
+      class="code-window"
+      data-code-pid={props.process.pid}
+      style={{ "--height": `${props.height}px` }}
+    >
+      <div class="titlebar" title={props.process.url}>
+        <span class="window-title">
+          {props.source?.name ?? props.process.url}
+        </span>
+        <button class="fold" title="close" onClick={props.close}>
+          <CloseIcon />
+        </button>
+      </div>
+      <pre class="source">
+        <code>
+          {highlightLines(
+            props.source?.code ?? `// no source for ${props.process.url}`
+          )}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg class="icon fold-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+    </svg>
   );
 }
 
@@ -576,21 +619,29 @@ function ProcLines() {
     const p = focusedProc();
     if (!p) return [];
     const chip = document.querySelector(`[data-pid="${p.pid}"]`);
-    const body = chip
-      ?.closest(".window-row")
-      ?.querySelector(".window .window-body");
+    const row = chip?.closest(".window-row");
+    const body = row?.querySelector(".window .window-body");
     if (!chip || !body) return [];
+    const source = row!.querySelector(`[data-code-pid="${p.pid}"] .source`);
     const c = chip.getBoundingClientRect();
     const b = body.getBoundingClientRect();
-    const start = { x: c.left, y: c.top + c.height / 2 };
-    const trunk = (b.right + c.left) / 2; // down the gutter beside the window
+    const s = source?.getBoundingClientRect();
+    const fromChip = { x: c.right, y: c.top + c.height / 2 };
+    const trunk = (c.right + b.left) / 2; // down the gutter beside the window
     const out: string[] = [];
     for (const name of opened()) {
       const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
       if (!item) continue;
       const r = item.getBoundingClientRect();
       if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
-      out.push(hook(start, trunk, { x: r.right - 6, y: r.top + r.height / 2 }));
+      // from the line of code that opened it, when its source is open
+      const line = source?.querySelector(`[data-opens="${CSS.escape(name)}"]`);
+      const l = line?.getBoundingClientRect();
+      const start =
+        l && s && l.bottom >= s.top && l.top <= s.bottom
+          ? { x: s.right, y: l.top + l.height / 2 }
+          : fromChip;
+      out.push(hook(start, trunk, { x: r.left + 6, y: r.top + r.height / 2 }));
     }
     return out;
   });
@@ -609,12 +660,13 @@ function hook(start: Point, trunk: number, end: Point): string {
   const radius = Math.min(6, Math.abs(end.y - start.y) / 2);
   if (radius < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
   const down = end.y > start.y ? 1 : -1;
+  const ahead = trunk > start.x ? 1 : -1; // which way the first leg runs
   return [
     `M ${start.x} ${start.y}`,
-    `L ${trunk + radius} ${start.y}`,
+    `L ${trunk - ahead * radius} ${start.y}`,
     `Q ${trunk} ${start.y} ${trunk} ${start.y + down * radius}`,
     `L ${trunk} ${end.y - down * radius}`,
-    `Q ${trunk} ${end.y} ${trunk - radius} ${end.y}`,
+    `Q ${trunk} ${end.y} ${trunk + ahead * radius} ${end.y}`,
     `L ${end.x} ${end.y}`,
   ].join(" ");
 }
