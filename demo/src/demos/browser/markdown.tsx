@@ -10,7 +10,7 @@ import { minimalSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import type { Directory } from "@ninepatch/core";
 import { bindText } from "@ninepatch/codemirror";
-import type { MarkdownDoc } from "../types";
+import type { MarkdownDoc } from "../../types";
 
 export default async function Markdown(dir: Directory) {
   const dom = await dir.open<Element>("dom");

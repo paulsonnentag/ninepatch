@@ -21,13 +21,17 @@ export const repo = new Repo({
 
 export const seed = await findOrCreateSeed();
 
-// The tools, each its own module — spawn takes the URL, the root's
-// importer resolves it, and Vite serves every tool as its own chunk.
-const modules = import.meta.glob<{ default: Main }>("./tools/*.{ts,tsx}");
+// The tools, each its own module in its demo's folder — spawn takes the
+// URL, the root's importer resolves it, and Vite serves every tool as its
+// own chunk.
+const modules = import.meta.glob<{ default: Main }>([
+  "./demos/*/*.{ts,tsx}",
+  "!./demos/*/index.tsx", // the demos' wiring, not tools
+]);
 
-/** The URL a tool is spawned by. */
-export function moduleUrl(name: string): string {
-  return `./tools/${name}`;
+/** The URL a tool is spawned by, from its path inside `demos/`. */
+export function moduleUrl(path: string): string {
+  return `./demos/${path}`;
 }
 
 // Mount functions registered under synthetic urls, so a plain function
@@ -101,7 +105,7 @@ async function findOrCreateSeed(): Promise<Seed> {
           96,
           240
         ),
-        map: { componentUrl: "./tools/map.tsx", x: 210, y: 16 },
+        map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
       },
     });
     const notes2 = repo.create<MarkdownDoc>({ content: "" });
@@ -142,7 +146,7 @@ async function findOrCreateSeed(): Promise<Seed> {
     // seeded before items carried componentUrl/docUrl: each card becomes
     // its own document, the canvas keeps only the wiring
     const items: Record<string, CanvasItem> = {
-      map: { componentUrl: "./tools/map.tsx", x: 210, y: 16 },
+      map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
     };
     for (const [id, card] of Object.entries(canvas.doc().cards ?? {})) {
       const doc =
@@ -158,6 +162,17 @@ async function findOrCreateSeed(): Promise<Seed> {
     canvas.change((d) => {
       d.items = items;
       delete d.cards;
+    });
+  }
+  const items = Object.values(canvas.doc().items);
+  if (items.some((it) => it.componentUrl.startsWith("./tools/"))) {
+    // seeded before each demo had its own folder
+    canvas.change((d) => {
+      for (const it of Object.values(d.items))
+        it.componentUrl = it.componentUrl.replace(
+          "./tools/",
+          "./demos/canvas/"
+        );
     });
   }
   const notes = await repo.find<MarkdownDoc>(docs.notes as AnyDocumentId);
@@ -184,5 +199,5 @@ async function findOrCreateSeed(): Promise<Seed> {
 }
 
 function placeItem(docUrl: string, x: number, y: number): CanvasItem {
-  return { componentUrl: "./tools/place.tsx", docUrl, x, y };
+  return { componentUrl: "./demos/canvas/place.tsx", docUrl, x, y };
 }

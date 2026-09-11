@@ -1,7 +1,7 @@
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
-import type { Folder } from "../types";
+import type { Folder } from "../../types";
 
 const HOST = "ninepatch.org";
 

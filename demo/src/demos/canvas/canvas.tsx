@@ -1,7 +1,7 @@
 import { For, from, onCleanup, type Accessor } from "solid-js";
 import { render } from "solid-js/web";
 import { field, type Directory, type Opened } from "@ninepatch/core";
-import type { CanvasDoc } from "../types";
+import type { CanvasDoc } from "../../types";
 
 /** The canvas is generic: for every item in its document it forks a
  * directory, mounts a draggable wrapper as `dom` and the item's `docUrl`

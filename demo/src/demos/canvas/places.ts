@@ -1,5 +1,5 @@
 import type { Directory } from "@ninepatch/core";
-import type { CanvasDoc, Place, PlaceDoc } from "../types";
+import type { CanvasDoc, Place, PlaceDoc } from "../../types";
 
 /** The aggregation, as a process: watch the canvas document, follow every
  * item's `docUrl`, and keep `places` mounted in the shared directory the

@@ -1,7 +1,7 @@
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
-import type { ChatDoc, ContactDoc } from "../types";
+import type { ChatDoc, ContactDoc } from "../../types";
 
 export default async function Chat(dir: Directory) {
   const dom = await dir.open<Element>("dom");

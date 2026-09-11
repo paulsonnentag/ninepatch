@@ -1,7 +1,7 @@
 import { from, Show } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory, Handle } from "@ninepatch/core";
-import type { PlaceDoc } from "../types";
+import type { PlaceDoc } from "../../types";
 
 /** One card, one document. The canvas hands it `document` (a link to its
  * own doc) and `dom` (the wrapper it drags); everything here edits the

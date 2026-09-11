@@ -1,5 +1,5 @@
 import { derive, type Directory } from "@ninepatch/core";
-import type { Folder } from "../types";
+import type { Folder } from "../../types";
 
 const KEY = "ninepatch:demo:route";
 

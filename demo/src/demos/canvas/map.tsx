@@ -1,7 +1,7 @@
 import { Map as LibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Directory } from "@ninepatch/core";
-import type { Place } from "../types";
+import type { Place } from "../../types";
 
 export default async function MapView(dir: Directory) {
   const dom = await dir.open<Element>("dom");

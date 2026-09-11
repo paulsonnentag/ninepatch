@@ -1,7 +1,7 @@
 import { For, from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
-import type { TodoDoc } from "../types";
+import type { TodoDoc } from "../../types";
 
 export default async function Todos(dir: Directory) {
   const dom = await dir.open<Element>("dom");
