@@ -115,19 +115,21 @@ pre {
   color: var(--faint);
 }
 
-/* the reset button sits in the label row, styled like the label */
-.panel h3 .reset {
+/* the demo's reset, a small word beside its headline */
+h2 .reset {
+  margin-left: 0.75rem;
   border: none;
   background: transparent;
   padding: 0;
   font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--faint);
   cursor: pointer;
+  vertical-align: middle;
 }
 
-.panel h3 .reset:hover {
+h2 .reset:hover {
   color: var(--accent);
 }
 
@@ -465,10 +467,14 @@ body.resizing {
 }
 
 .proc-lines path {
-  stroke: var(--accent);
+  stroke: #c8c8cc;
   stroke-width: 1.2;
   fill: none;
   stroke-linecap: round;
+}
+
+.proc-lines path.focused {
+  stroke: var(--accent);
 }
 
 .window.folded .titlebar {

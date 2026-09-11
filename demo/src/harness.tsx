@@ -113,7 +113,14 @@ export function Section(props: {
 
   return (
     <section>
-      <h2>{props.title}</h2>
+      <h2>
+        {props.title}
+        <Show when={props.reset}>
+          <button class="reset" onClick={() => props.reset!()}>
+            reset
+          </button>
+        </Show>
+      </h2>
       <div class="prose">{props.prose}</div>
       <div
         class="panels"
@@ -125,14 +132,7 @@ export function Section(props: {
         }}
       >
         <div class="panel example">
-          <h3>
-            preview
-            <Show when={props.reset}>
-              <button class="reset" onClick={() => props.reset!()}>
-                reset
-              </button>
-            </Show>
-          </h3>
+          <h3>preview</h3>
           <div class="panel-body live">{props.children}</div>
         </div>
         <div class="divider" onPointerDown={[drag, 0]} />
@@ -642,9 +642,11 @@ function mountProcLines() {
   render(() => <ProcLines />, document.body);
 }
 
-// one overlay for the whole page: lines from the focused process to the
-// rows it has open, redrawn on scroll and resize
+// one overlay for the whole page: lines from every process to the rows it
+// has open, gray, the hovered or clicked one's in colour; redrawn on
+// scroll and resize
 function ProcLines() {
+  const table = from(processes, processes.value);
   const [bump, setBump] = createSignal(0, { equals: false });
   const redraw = () => setBump(0);
   document.addEventListener("scroll", redraw, { capture: true, passive: true });
@@ -654,15 +656,23 @@ function ProcLines() {
     removeEventListener("resize", redraw);
   });
 
-  /** What the focused process has open, live. */
-  const [opened, setOpened] = createSignal<string[]>([]);
+  /** What every process has open, live. */
+  const [opened, setOpened] = createSignal(new Map<Process, string[]>());
   createEffect(() => {
-    const p = focusedProc();
-    if (!p) return setOpened([]);
-    const unsub = p.dir.children.subscribe((kids) =>
-      setOpened(kids.map((c) => c.name))
+    const unsubs = table().map((p) =>
+      p.dir.children.subscribe((kids) =>
+        setOpened((m) =>
+          new Map(m).set(
+            p,
+            kids.map((c) => c.name)
+          )
+        )
+      )
     );
-    onCleanup(unsub);
+    onCleanup(() => {
+      unsubs.forEach((u) => u());
+      setOpened(new Map());
+    });
   });
 
   createEffect(() => {
@@ -685,53 +695,64 @@ function ProcLines() {
 
   const lines = createMemo(() => {
     bump();
-    const p = focusedProc();
-    if (!p) return [];
-    const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
-    const body = chip
-      ?.closest(".window-row")
-      ?.querySelector(".window .window-body");
-    if (!chip || !body) return [];
-    const box = document.querySelector(
-      `.code-window[data-code-pid="${p.pid}"]`
+    const focused = focusedProc();
+    const all = table().flatMap((p) =>
+      linesFor(p, opened().get(p) ?? []).map((d) => ({
+        d,
+        focused: p === focused,
+      }))
     );
-    const source = box?.querySelector(".cm-scroller");
-    // the node: the open box, or the pill in the lane
-    const c = (box ?? chip).getBoundingClientRect();
-    const b = body.getBoundingClientRect();
-    const s = source?.getBoundingClientRect();
-    const fromChip = { x: c.left, y: c.top + (box ? 16 : c.height / 2) };
-    const trunk = (b.right + c.left) / 2; // down the gutter beside the window
-    // a preview covers the rows' right side: only the selected entry's line,
-    // and it stops at the window's edge
-    const selected = body.querySelector(".preview")
-      ? body.querySelector(".tree-item.selected")?.getAttribute("data-path")
-      : undefined;
-    const out: string[] = [];
-    for (const name of opened()) {
-      if (selected !== undefined && name !== selected) continue;
-      const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
-      if (!item) continue;
-      const r = item.getBoundingClientRect();
-      if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
-      // from the line of code that opened it, when its source is open
-      const line = source?.querySelector(`[data-opens="${CSS.escape(name)}"]`);
-      const l = line?.getBoundingClientRect();
-      const start =
-        l && s && l.bottom >= s.top && l.top <= s.bottom
-          ? { x: s.left, y: l.top + l.height / 2 }
-          : fromChip;
-      const end = selected !== undefined ? b.right : r.right - 6;
-      out.push(hook(start, trunk, { x: end, y: r.top + r.height / 2 }));
-    }
-    return out;
+    return all.sort((a, b) => Number(a.focused) - Number(b.focused)); // colour on top
   });
 
   return (
     <svg class="proc-lines" aria-hidden="true">
-      <For each={lines()}>{(d) => <path d={d} />}</For>
+      <For each={lines()}>
+        {(line) => <path d={line.d} classList={{ focused: line.focused }} />}
+      </For>
     </svg>
   );
+}
+
+// a process's lines: from its node, or the code lines in its open box, down
+// the lane and into the rows it has open
+function linesFor(p: Process, names: string[]): string[] {
+  const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
+  const body = chip
+    ?.closest(".window-row")
+    ?.querySelector(".window .window-body");
+  if (!chip || !body) return [];
+  const box = document.querySelector(`.code-window[data-code-pid="${p.pid}"]`);
+  const source = box?.querySelector(".cm-scroller");
+  // the node: the open box, or the pill in the lane
+  const c = (box ?? chip).getBoundingClientRect();
+  const b = body.getBoundingClientRect();
+  const s = source?.getBoundingClientRect();
+  const fromChip = { x: c.left, y: c.top + (box ? 16 : c.height / 2) };
+  const trunk = (b.right + c.left) / 2; // down the lane beside the window
+  // a preview covers the rows' right side: only the selected entry's line,
+  // and it stops at the window's edge
+  const selected = body.querySelector(".preview")
+    ? body.querySelector(".tree-item.selected")?.getAttribute("data-path")
+    : undefined;
+  const out: string[] = [];
+  for (const name of names) {
+    if (selected !== undefined && name !== selected) continue;
+    const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
+    if (!item) continue;
+    const r = item.getBoundingClientRect();
+    if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
+    // from the line of code that opened it, when its source is open
+    const line = source?.querySelector(`[data-opens="${CSS.escape(name)}"]`);
+    const l = line?.getBoundingClientRect();
+    const start =
+      l && s && l.bottom >= s.top && l.top <= s.bottom
+        ? { x: s.left, y: l.top + l.height / 2 }
+        : fromChip;
+    const end = selected !== undefined ? b.right : r.right - 6;
+    out.push(hook(start, trunk, { x: end, y: r.top + r.height / 2 }));
+  }
+  return out;
 }
 
 type Point = { x: number; y: number };
