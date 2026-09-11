@@ -81,7 +81,6 @@ pre {
   resize: vertical;
   overflow: hidden;
   min-height: 12rem;
-  max-height: 40rem; /* taller content scrolls inside the panes */
 }
 
 .panel.example {
@@ -178,8 +177,10 @@ body.dragging {
   align-items: stretch;
 }
 
+/* the tree keeps to a third of the screen; the code gets the rest */
 .windows > .tree {
-  flex: 1;
+  flex: 0 1 33vw;
+  max-width: 33vw;
   min-width: 0;
 }
 
@@ -202,34 +203,12 @@ body.dragging {
   left: 0;
   right: 0;
   z-index: 1;
-  animation: code-expand 0.25s ease; /* the node wipes out into its window */
   display: flex;
   flex-direction: column;
   border: 1px solid #d0d0d0;
   border-radius: 0 10px 10px 0;
   background: white;
   overflow: hidden;
-}
-
-@keyframes code-expand {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-
-.code-titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.4rem;
-  height: 2rem;
-  padding: 0 0.5rem 0 0.75rem;
-  flex: none;
-  background: linear-gradient(#f4f4f4, #e8e8e8);
-  border-bottom: 1px solid #d4d4d4;
 }
 
 .code-body {
@@ -316,7 +295,6 @@ body.dragging {
    on the left, and the selection previewed in a window on the right */
 .panel.context .panel-body {
   padding: 0;
-  overflow: auto; /* the band is capped; a tall data panel scrolls */
 }
 
 .windows {
@@ -348,7 +326,6 @@ body.dragging {
   display: flex;
   flex-direction: column;
   height: var(--height, 250px);
-  transition: height 0.25s ease;
   border: 1px solid #d0d0d0;
   border-radius: 10px;
   background: white;
@@ -373,11 +350,7 @@ body.dragging {
 }
 
 .window.folded {
-  height: calc(2rem + 2px); /* the title bar and the borders */
-}
-
-body.resizing .window {
-  transition: none; /* the grip tracks the pointer directly */
+  height: auto;
 }
 
 /* drag the bottom edge to make a window taller */
@@ -468,7 +441,8 @@ body.resizing {
   z-index: 2;
   border-radius: 10px 0 0 10px;
   border-right: none;
-  background: linear-gradient(#f4f4f4, #e8e8e8);
+  border-color: #d0d0d0;
+  background: white;
 }
 
 /* one overlay for the whole page: connectors from the focused process

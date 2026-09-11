@@ -205,6 +205,7 @@ function Windows(props: { chain: Directory[]; sources: Source[] }) {
   onMount(() => {
     const observer = new ResizeObserver(bumpLayout);
     observer.observe(tree);
+    observer.observe(column()!); // hidden while empty, so it appears with the first window
     onCleanup(() => observer.disconnect());
   });
   return (
@@ -310,13 +311,6 @@ function Node(props: {
     procs().length === 0 &&
     (props.depth > 0 ? own().length === 0 : rows().length === 0);
   const [folded, setFolded] = createSignal(props.depth > 0); // nested windows start closed
-  // the body stays while the window animates shut
-  const [bodyShown, setBodyShown] = createSignal(!folded());
-  createEffect(() => {
-    if (!folded()) return setBodyShown(true);
-    const timer = setTimeout(() => setBodyShown(false), FOLD_MS);
-    onCleanup(() => clearTimeout(timer));
-  });
   const [height, setHeight] = createSignal(250);
   // the process whose source is open in the code column beside this window
   const [code, setCode] = createSignal<Process>();
@@ -428,7 +422,7 @@ function Node(props: {
                 <FoldIcon folded={folded()} />
               </button>
             </div>
-            <Show when={bodyShown()}>
+            <Show when={!folded()}>
               <div class="window-body">
                 <div class="entries">
                   <For each={rows()}>
@@ -505,10 +499,6 @@ function Node(props: {
                       source={sourceFor(p)}
                       anchor={el}
                       column={column()}
-                      close={() => {
-                        setCode(undefined);
-                        if (pinnedProc() === p) setPinnedProc(undefined);
-                      }}
                     />
                   </Portal>
                 )}
@@ -521,8 +511,6 @@ function Node(props: {
     </Show>
   );
 }
-
-const FOLD_MS = 250; // matches the height transition in the stylesheet
 
 // --- processes ------------------------------------------------------------
 
@@ -569,13 +557,12 @@ function ProcNode(props: {
 }
 
 // the process's source, read-only, in the code column level with its
-// directory window and as tall as it
+// directory window and as tall as it; the node is its tab and closes it
 function CodeWindow(props: {
   process: Process;
   source: Source | undefined;
   anchor: HTMLElement;
   column: HTMLElement;
-  close: () => void;
 }) {
   const code = props.source?.code ?? `// no source for ${props.process.url}`;
   const box = createMemo(() => {
@@ -618,26 +605,14 @@ function CodeWindow(props: {
         setHoveredProc((h) => (h === props.process ? undefined : h))
       }
     >
-      <div class="code-titlebar" title={props.process.url}>
-        <button class="fold code-close" title="close" onClick={props.close}>
-          <CloseIcon />
-        </button>
-      </div>
       <div
         class="code-body"
         ref={host}
+        title={props.process.url}
         onMouseMove={hover}
         onMouseLeave={() => setHoveredDep(undefined)}
       />
     </div>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg class="icon fold-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-    </svg>
   );
 }
 
