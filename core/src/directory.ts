@@ -1,11 +1,5 @@
-/** The directory: a collection of named things — its own overlay of
- * entries, the directory it came from, and the path it was opened at
- * there. Reads check the own entries and fall through — live — to the
- * parent at `path + rel`; misses bubble to the servers registered up the
- * chain; unanswered requests reject with NotFound. A process is a module
- * running in a directory: `spawn` imports it and runs its default export
- * with a directory that shares these entries and has a lifetime of its
- * own. See spec.md — it is canonical. */
+// the directory: own entries, live fall-through to the parent, misses
+// bubbling to the servers up the chain. See spec.md — it is canonical.
 
 import {
   brand,
@@ -24,63 +18,42 @@ import { walk, type WalkResult } from "./walk";
 export type { Entry };
 
 export type Directory = {
-  /** The name given to fork() or spawn(); for open(), the path opened;
-   * "root" for createDirectory(). A label, nothing more. */
+  /** The fork/spawn name; for open(), the path. A label, nothing more. */
   readonly name: string;
-  /** The path this directory was opened at, relative to what it was
-   * opened from — `[]` for a fork or a process view. */
+  /** Where this was opened, relative to its source — `[]` for a fork. */
   readonly path: readonly string[];
-  /** This directory's own entries — what it mounted, was served, or cut.
-   * Says nothing about what it inherits. Read-only. */
+  /** Own entries only — mounted, served, or cut; nothing inherited. */
   readonly entries: Handle<Entry[]>;
-  /** Everything opened or forked from this directory that is still open.
-   * Read-only. */
+  /** Everything opened or forked from here that is still open. */
   readonly children: Handle<Directory[]>;
-  /** Aborts when this directory is closed — by its holder, or because
-   * something it was opened or forked from was. */
+  /** Aborts when this directory is closed, directly or from above. */
   readonly signal: AbortSignal;
 
-  /** Walk down (relative path) or ask for a document (URL). Returns a new
-   * directory for what is there; it remembers the path and reads through
-   * this directory. Name a type and you get a directory that is also a
-   * handle; don't, and you get a bare directory. Rejects with NotFound
-   * once the servers have answered and nothing is there. The empty path
-   * throws — use fork(). */
+  /** A new directory reading through this one at `path`; a named type makes it a handle too. */
   open<T = never>(path: Path): Promise<Opened<T>>;
 
-  /** A new directory at the empty path: the same names, its own entries.
-   * Reads fall through to this one, writes stay in the fork. */
+  /** The same names at the empty path; writes stay in the fork. */
   fork<Self>(this: Self, name?: string): Self;
 
-  /** Into this directory's own entries. Replaces what this directory had
-   * there. A Handle is used as-is; anything else is wrapped in a new one. */
+  /** Into own entries, replacing. A Handle as-is; anything else wrapped. */
   mount(path: Path, what: unknown): void;
-  /** Remove, and cut fall-through at that node — permanently, for this
-   * directory and everything opened or forked from it. Mounting over the
-   * cut is allowed. */
+  /** Remove and cut fall-through there — permanently, for this and below. */
   unmount(path: Path): void;
 
-  /** Answer misses at or below here — from this directory or anything
-   * opened or forked from it. Returns unregister. */
+  /** Answer misses at or below here. Returns unregister. */
   serve(server: Server): () => void;
 
-  /** Import the module at `url` and run its default export here, sharing
-   * these entries, with its own lifetime. */
+  /** Run `url`'s default export here — same entries, its own lifetime. */
   spawn(name: string, url: string): Process;
 
-  /** Release this directory: kill the processes running at it, then close
-   * everything opened or forked from it. */
+  /** Kill the processes here, then close everything opened or forked. */
   close(): void;
 };
 
-/** What answers requests. `target`: the missing path as it reads from the
- * serving directory — the requester's path, grown by each level it
- * climbed; through a link, the first name is the URL. `from`: the
- * requester's entries, seen from the serving directory; anything opened
- * through it belongs to the requester and closes with it. */
+// `target`: the missing path as the serving directory reads it; `from`:
+// the requester's entries seen from there — fills land in the requester
 export type Server = {
-  /** An open found nothing there. Must return a promise; decline by
-   * returning without mounting. */
+  /** An open found nothing. Decline by returning without mounting. */
   open?(target: string[], from: Directory): Promise<void>;
   /** The last directory at or below `target` closed. */
   close?(target: string[], from: Directory): void;
@@ -88,8 +61,7 @@ export type Server = {
 
 export type Opened<T> = [T] extends [never] ? Directory : Directory & Handle<T>;
 
-/** What spawn runs: a module's default export. Returning ends nothing;
- * closing `dir` does. */
+/** What spawn runs. Returning ends nothing; closing `dir` does. */
 export type Main = (dir: Directory) => Promise<void> | void;
 
 /** A directory with a module running in it. */
@@ -100,17 +72,13 @@ export type Process = {
   readonly url: string;
   /** Where it was spawned; nothing else leads there. */
   readonly at: Directory;
-  /** What the default export received: the entries of `at`, an empty
-   * path, and its own lifetime. `children` is what it opened. `close()`
-   * kills; `signal` aborts then. */
+  /** What the default export received. `close()` kills; `signal` aborts. */
   readonly dir: Directory;
-  /** The default export's return. A failed import or a throw rejects it
-   * and kills. */
+  /** The default export's return; a throw or failed import rejects and kills. */
   readonly terminated: Promise<void>;
 };
 
-/** The origin, and the only view of the process table. A fork of the root
- * is a plain Directory: the table does not fork. */
+// the origin, and the only view of the process table
 export type Root = Omit<Directory, "fork"> & {
   fork(name?: string): Directory;
   /** Every process running at or below this root. Read-only. */
@@ -145,16 +113,13 @@ export class DirectoryImpl {
   readonly name: string;
   readonly overlay: Overlay;
   readonly parent: DirectoryImpl | undefined;
-  /** The path this directory was opened at, relative to `parent` — `[]`
-   * for a fork or a process view. Links along it are re-followed on every
-   * read, so a shadowed URL retargets everything downstream. */
+  // links along the path re-follow on every read: a shadowed URL retargets
   readonly path: string[];
 
   readonly entries: Handle<Entry[]>;
   readonly children: Handle<DirectoryImpl[]>;
   readonly servers = new Set<Server>();
-  /** Requests this directory fired as requester, refcounted by the
-   * directories holding their answers. */
+  // requests fired as requester, refcounted by the holders of the answers
   readonly served = new Map<string, { target: string[]; count: number }>();
   readonly pending = new Map<string, Promise<void>>();
   /** The value here moved — the Watch says when. */
@@ -310,9 +275,7 @@ export class DirectoryImpl {
     this.terminal().change(fn);
   }
 
-  /** The store contract over a live read: `fn(value)` now if something is
-   * there, and each time the re-walk settles on something. While the walk
-   * lands on nothing, subscribers stay quiet and `value` throws. */
+  // `fn(value)` now and on each settled re-walk; quiet while nothing is there
   subscribe(fn: (value: unknown) => void): () => void {
     this.ensureWatch();
     const notify = () => {
@@ -390,10 +353,8 @@ export class DirectoryImpl {
   }
 }
 
-/** The miss/fill cycle: walk; on a miss, ask the servers up the chain
- * (deduped per target per requester), await the handlers, re-walk. A
- * re-walk that misses somewhere new means a link was mounted and followed
- * — go again. The same miss twice is NotFound. */
+// walk; on a miss ask the servers (deduped), re-walk; the same miss twice
+// is NotFound, a new one means a link appeared — go again
 async function resolveWithFills(
   requester: DirectoryImpl,
   rel: string[]
@@ -423,8 +384,7 @@ async function resolveWithFills(
   throw new NotFound(rel);
 }
 
-/** Climb from the requester, growing the target by each level's path —
- * every server hears the miss as it reads from its own directory. */
+// every server up the chain hears the miss as it reads from its directory
 async function fireOpen(
   requester: DirectoryImpl,
   target: string[]
@@ -458,18 +418,13 @@ function fireClose(requester: DirectoryImpl, target: string[]): void {
   }
 }
 
-/** The requester's entries, seen from a server's directory: paths are
- * translated by the prefix between them — the concatenated paths of
- * everything the requester hangs below the server — so fills land in the
- * requester's own entries and anything opened through it belongs to the
- * requester and closes with it. */
+// the requester's entries seen from a server: paths translated by the
+// prefix between them, so fills land in the requester and close with it
 class FromView {
   readonly [brand] = true;
-  /** The requester's entries, in the server's coordinates; URL-rooted
-   * paths are the same everywhere. */
+  // the requester's entries in the server's coordinates
   readonly entries: Handle<Entry[]>;
-  /** The requester's position inside the serving directory. URL-rooted
-   * once a document boundary lies between them. */
+  // the requester's position inside the serving directory
   private readonly prefix: string[];
 
   constructor(
@@ -563,10 +518,8 @@ class FromView {
   }
 }
 
-/** Live reads: re-walk when any overlay in the chain mutates or any handle
- * the walk crossed fires; `changes` fires once the re-walk settles — which
- * may involve the servers, when a retargeted link points somewhere not
- * yet filled. */
+// live reads: re-walk when an overlay in the chain mutates or a crossed
+// handle fires; `changes` fires once the re-walk settles
 class Watch {
   private readonly unsubOverlays: (() => void)[] = [];
   private unsubHandles: (() => void)[] = [];

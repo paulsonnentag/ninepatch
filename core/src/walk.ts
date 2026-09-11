@@ -1,25 +1,18 @@
-/** Resolution, as the spec's Resolution section states it: a directory is
- * its own entries, the directory it came from, and the path it was opened
- * at there. `locate` is the structural lookup — own entries first, then
- * the parent asked for `path + rel` — and `walk` runs it and follows
- * links — a handle whose value is a URL string — restarting from the
- * requester each hop, with a hop limit. Nothing here holds an absolute
- * path. */
+// resolution, as the spec states it: locate structurally, follow links
+// (restarting from the requester each hop), never hold an absolute path
 
 import type { Handle } from "./handle";
 import type { Overlay } from "./overlay";
 import { hasScheme, isUrlRooted, parsePath } from "./path";
 
-/** What walk needs of a directory: its entries, the directory it came
- * from, and the path it was opened at there — `[]` for a fork. */
+// what walk needs of a directory: entries, parent, and the path opened at
 export type ChainNode = {
   overlay: Overlay;
   parent: ChainNode | undefined;
   path: string[];
 };
 
-/** `at` is in the requester's coordinates — or URL-rooted, once a link
- * was followed; a URL reads the same at every level. */
+// `at` is in the requester's coordinates — URL-rooted once a link was crossed
 export type WalkResult =
   | {
       kind: "found";
@@ -63,9 +56,7 @@ export function walk(
   throw new Error(`link loop at ${cur.join("/")}`);
 }
 
-/** The structural lookup: own entries at `rel`; a cut stops the climb;
- * otherwise the parent is asked for `path + rel`. URL-rooted paths climb
- * unchanged — a URL reads the same at every level. */
+// own entries at `rel`; a cut stops the climb; else the parent gets `path + rel`
 export function locate(
   start: ChainNode,
   rel: string[]
@@ -86,12 +77,8 @@ export function locate(
   return { handle: undefined, hasEntries };
 }
 
-/** The longest prefix of the path that holds a link, walked outward: the
- * prefixes of `cur` here first (down to the requester's own node), then,
- * climbing, the positions the path grows through inside each ancestor.
- * The first position holding anything decides: a link is followed — the
- * remainder appended to its URL — and a plain value or entries block the
- * search. Once the path is URL-rooted there is nothing new above. */
+// the longest prefix holding a link, searched here then climbing; the first
+// position holding anything decides — a non-link blocks the search
 function followableLink(
   start: ChainNode,
   cur: string[],

@@ -1,10 +1,5 @@
-/** The page furniture: tools as Solid components (`createComponent`),
- * and a section — prose plus three panels: the live example, the code
- * behind it in tabs, and the directories it runs in, drawn as a file
- * window: the hierarchy of directories as windows with their entries as
- * files, the processes running at each one as nodes beside its window,
- * and a preview of whatever is selected. Handles feed Solid through
- * `from()`: a handle is a store. */
+// the page furniture: tools as Solid components, and a section — prose
+// plus three panels: the live example, the code, and the directories
 
 import {
   createEffect,
@@ -35,13 +30,8 @@ import { processes, registerTool } from "./boot";
 
 export type Source = { name: string; code: string };
 
-/** A tool as a Solid component. `createComponent(url)` bakes the module
- * in; the component forks `dir` under `name`, mounts every other prop as
- * an entry plus its own element as `dom`, spawns the module, and closes
- * on cleanup. A tool that rejects — an entry it needed isn't there —
- * says so in its slot. Given a mount function instead of a url, it is
- * registered with the loader under `tool:<name>` and still runs as a
- * real process. */
+// a tool as a Solid component: forks `dir`, mounts every other prop as an
+// entry plus its element as `dom`, spawns the module, closes on cleanup
 export function createComponent<
   Props extends Record<string, unknown> = Record<never, never>,
 >(tool: string | Main, name?: string) {
@@ -73,15 +63,12 @@ function componentName(url: string): string {
   return base[0].toUpperCase() + base.slice(1); // chat.tsx runs as "Chat"
 }
 
-/** A section: title and prose at reading width, then a band across the
- * whole page — preview | data | code — with draggable dividers between
- * the three and a resize grip for its height. */
+// a section: title and prose, then a band — preview | data | code
 export function Section(props: {
   title: string;
   prose: JSX.Element;
   sources: Source[];
-  /** The section's directory, last, with everything it was forked from
-   * before it — that's where its inherited entries come from. */
+  /** The section's directory, last, after everything it was forked from. */
   chain: Directory[];
   /** Puts the demo's documents back in their seeded state. */
   reset?: () => void;
@@ -98,8 +85,7 @@ export function Section(props: {
     if (index >= 0) setTab(index);
   };
 
-  /** Drag a divider: move width between its two neighbours, in fractions
-   * of the band, so the layout survives a window resize. */
+  // a divider drag moves width between its neighbours, in fractions
   const drag = (index: number, e: PointerEvent) => {
     e.preventDefault();
     const start = e.clientX;
@@ -199,8 +185,7 @@ function Tabs(props: {
   );
 }
 
-/** Syntax colours from the same parser CodeMirror uses, as static spans:
- * `tok-*` classes, styled in the stylesheet. */
+// syntax colours from CodeMirror's parser, as static `tok-*` spans
 function highlight(code: string): JSX.Element[] {
   const tree = javascript({
     jsx: true,
@@ -228,23 +213,18 @@ type EntryRow = {
   inherited: boolean;
 };
 
-/** An entry picked in some window: the row, the directory whose window it
- * was picked in, and that window's probe for resolving links. */
+// an entry picked in some window, and that window's probe for links
 type Selection = {
   row: EntryRow;
   dir: Directory;
   probe: Directory | undefined;
 };
 
-/** How a window is found from elsewhere — the preview's "from" link
- * unfolds the window the entry came from and scrolls to it. */
+// how a window is found from elsewhere — the preview's "from" link
 type Registry = Map<Directory, () => void>;
 
-/** The directories of a section: one window per directory, hung in their
- * hierarchy, with the processes running at each one as nodes beside its
- * window. Selecting an entry opens a preview inside its window; there is
- * one selection for the whole tree, so picking in one window closes the
- * others. */
+// one window per directory, processes as nodes beside them; one selection
+// for the whole tree, so picking in one window closes the others
 function Windows(props: {
   chain: Directory[];
   onFocusProcess?: (p: Process) => void;
@@ -281,16 +261,9 @@ function Windows(props: {
   );
 }
 
-/** One directory in the tree: a window named after it, listing what
- * `open` would find from here — what it inherits from the directories it
- * was forked from, faint, then its own — and below it the directories below
- * it, each its own window hanging off a line from this one. A directory
- * that mounted nothing of its own is transparent to reads, so it is
- * transparent here too: not drawn, its children in its place (the top one
- * is kept as long as it has anything to list). The viewer's
- * own opens (to show what a link points at) go through a fork made before
- * it starts listening, so they never show up as windows. What is selected
- * in this window is previewed beside its list. */
+// one directory as a window: inherited entries faint, own after, children
+// hanging below; a directory that mounted nothing is not drawn, and the
+// viewer's own opens go through a probe fork so they never show as windows
 function Node(props: {
   chain: Directory[];
   depth: number;
@@ -309,9 +282,7 @@ function Node(props: {
   const kids = from(self.children, self.children.value);
   /** What runs here — drawn beside the window, never inside it. */
   const procs = () => props.processes().filter((p) => p.at === self);
-  /** What those processes forked: their views share this directory's
-   * namespace, so their forks belong under this window. Their opens
-   * (path ≠ []) stay internal, like the probe's. */
+  // processes' forks belong under this window; their opens stay internal
   const [procKids, setProcKids] = createSignal<Directory[]>([]);
   createEffect(() => {
     const running = procs();
@@ -325,8 +296,7 @@ function Node(props: {
     onCleanup(() => unsubs.forEach((u) => u()));
   });
   const children = () => [...kids().filter((c) => c !== probe), ...procKids()];
-  /** Nothing to show: below the top, a directory that mounted nothing and
-   * runs nothing; at the top, one with nothing to list at all. */
+  // nothing to show: mounted nothing and runs nothing
   const transparent = () =>
     procs().length === 0 &&
     (props.depth > 0 ? own().length === 0 : rows().length === 0);
@@ -334,8 +304,7 @@ function Node(props: {
   const [height, setHeight] = createSignal(250);
   let el!: HTMLDivElement;
 
-  /** Drag the bottom edge: the window gets taller or shorter, never
-   * shorter than its title bar and a few rows. */
+  // the bottom edge drags, never shorter than the title bar and a few rows
   const resize = (e: PointerEvent) => {
     e.preventDefault();
     const start = e.clientY;
@@ -358,8 +327,7 @@ function Node(props: {
     return sel?.dir === self ? sel : undefined;
   };
   const isSelected = (row: EntryRow) => mine()?.row.key === row.key;
-  /** This row is where a selection in some window below was inherited
-   * from. */
+  // this row is where a selection in some window below was inherited from
   const isOrigin = (row: EntryRow) => {
     const sel = props.selection();
     return (
@@ -507,9 +475,8 @@ const [hoveredProc, setHoveredProc] = createSignal<Process>();
 const [pinnedProc, setPinnedProc] = createSignal<Process>();
 const focusedProc = () => hoveredProc() ?? pinnedProc();
 
-/** A process, beside the window of the directory it runs in. Hover or
- * click and lines run to the entries it has open; click also shows its
- * source in the code panel. */
+// a process beside its directory's window; hover or click runs lines to
+// what it has open, click also shows its source
 function ProcNode(props: { process: Process; onFocus?: (p: Process) => void }) {
   const p = props.process;
   onCleanup(() => {
@@ -542,10 +509,8 @@ function mountProcLines() {
   render(() => <ProcLines />, document.body);
 }
 
-/** One overlay for the whole page: lines from the focused process's node
- * to the rows it has open in its window, redrawn on scroll, resize, and
- * whenever what it opened changes; rows scrolled out of the window are
- * skipped. */
+// one overlay for the whole page: lines from the focused process to the
+// rows it has open, redrawn on scroll and resize
 function ProcLines() {
   const [bump, setBump] = createSignal(0, { equals: false });
   const redraw = () => setBump(0);
@@ -612,8 +577,7 @@ function ProcLines() {
 
 type Point = { x: number; y: number };
 
-/** The connector: out of the node, down the trunk, and a rounded elbow
- * hooking left into the row. */
+// the connector: out of the node, down the trunk, an elbow into the row
 function hook(start: Point, trunk: number, end: Point): string {
   const radius = Math.min(6, Math.abs(end.y - start.y) / 2);
   if (radius < 1) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
@@ -628,10 +592,8 @@ function hook(start: Point, trunk: number, end: Point): string {
   ].join(" ");
 }
 
-/** The selected entry, in full: where it came from, if inherited — click
- * the name to go to that window — and its value: a link as the document it points at
- * with the URL above, copyable; an element as its DOM tree; anything else
- * in the raw editor. */
+// the selected entry in full: where it came from, and its value — a link
+// as the document it points at, an element as its DOM tree, the rest raw
 function Preview(props: {
   selection: Selection;
   reveal: (dir: Directory) => void;
@@ -691,11 +653,8 @@ function FileIcon() {
   );
 }
 
-/** What a value looks like: a one-line summary in a row, or, with
- * `editor`, the full thing. A link is drawn as what it points at — the URL
- * itself appears above the editor, copyable — by opening it through the
- * probe so the document follows the link live. An element has no summary;
- * its editor is its DOM tree. */
+// a one-line summary, or with `editor` the full thing; a link is opened
+// through the probe so it is drawn as what it points at, live
 function Value(props: {
   handle: Handle<unknown>;
   path: string[];
@@ -743,8 +702,7 @@ function Value(props: {
   );
 }
 
-/** Opens the path through the probe — a resource, so NotFound reaches the
- * <ErrorBoundary> above — and closes what it opened when the row goes. */
+// opens through the probe — a resource, so NotFound reaches the boundary
 function Linked(props: {
   url: string;
   path: string[];
@@ -789,8 +747,7 @@ function CopyUrl(props: { url: string }) {
   );
 }
 
-/** A one-line reading of a value: what kind of thing it is, not what it
- * says. Links by URL, objects by their keys. */
+// what kind of thing a value is, not what it says
 function Summary(props: { value: unknown }) {
   return <>{summarize(props.value)}</>;
 }
@@ -826,9 +783,8 @@ function summarize(v: unknown): JSX.Element {
 
 const MAX_DOM_NODES = 400;
 
-/** An element as the inspector would show it: every descendant, nested,
- * tags with their attributes and text in between, redrawn as the element
- * changes. Hovering a line lights up that element in the page. */
+// an element as the inspector would show it; hovering a line lights up
+// that element in the page
 function DomTree(props: { element: Element }) {
   const [version, bump] = createSignal(0, { equals: false });
   const observer = new MutationObserver(() => bump(0));
@@ -946,8 +902,7 @@ function flatten(el: Element, depth: number, out: DomLine[]): void {
   out.push({ kind: "close", depth, element: el, tag });
 }
 
-/** The element under the mouse in a DOM tree, and a box drawn over it in
- * the page — one box for the whole page, mounted on first use. */
+// the element under the mouse, and one page-wide highlight box over it
 const [lit, setLit] = createSignal<Element>();
 let highlightMounted = false;
 
@@ -983,12 +938,8 @@ function Highlight() {
 
 // --- helpers ------------------------------------------------------------------
 
-/** The rows of a column: what a walk from the last directory in the chain
- * would find, inherited entries first and the directory's own after them.
- * Resolved nearest overlay first: a path already seen is shadowed, a cut
- * hides everything at or below it from further out. URL-keyed fills are
- * the plumbing, not the picture. Row identity is kept per path so a
- * fill landing elsewhere doesn't rebuild every row. */
+// what a walk would find: inherited entries first, own after, nearest
+// overlay winning; URL-keyed fills are the plumbing, not the picture
 function createRows(chain: Directory[]): Accessor<EntryRow[]> {
   const layers = [...chain]
     .reverse()
@@ -1059,8 +1010,7 @@ function label(name: string): string {
   return name.split("/").map(shorten).join("/");
 }
 
-/** `automerge:4NMNnkMh…` — a URL keeps its scheme and a few characters of
- * its id; anything else is shown whole. */
+// `automerge:4NMNnkMh…` — a URL keeps its scheme and a few id characters
 function shorten(name: string): string {
   if (!hasScheme(name) || name.length <= 22) return name;
   const colon = name.indexOf(":");

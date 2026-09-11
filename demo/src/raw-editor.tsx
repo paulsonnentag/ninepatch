@@ -1,9 +1,5 @@
-/** A raw view and editor for any value behind a handle — an automerge
- * document or a plain mounted object. Ported from patchwork-base-3's
- * `raw` tool, minus virtualization, undo, and downloads: a tree of rows,
- * expand and collapse, edit a primitive in place, add a field, delete,
- * rename a key. Writes go through `handle.change`; strings inside an
- * automerge document go through `updateText` so concurrent edits merge. */
+// a raw view and editor for any value behind a handle, ported from
+// patchwork-base-3's raw tool minus virtualization, undo, and downloads
 
 import { createSignal, For, from, Show } from "solid-js";
 import { isAutomerge, updateText } from "@automerge/automerge";
@@ -17,8 +13,7 @@ export function RawEditor(props: { handle: Handle<unknown> }) {
   const [error, setError] = createSignal<string | undefined>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Every write: through `change`, or `set` for a primitive root. A
-   * read-only handle throws — shown briefly, then forgotten. */
+  // writes go through `change`; a read-only handle's throw shows briefly
   const write = (fn: (draft: unknown) => void, root?: unknown) => {
     try {
       if (root !== undefined) props.handle.set(root);
@@ -513,9 +508,7 @@ function at(root: unknown, path: Prop[]): unknown {
   );
 }
 
-/** Replace the value at `path`. A string over a string inside an automerge
- * document becomes an `updateText` so concurrent edits merge instead of
- * clobbering. */
+// a string over a string becomes an `updateText`, so concurrent edits merge
 function setAt(root: unknown, path: Prop[], next: unknown): void {
   const parent = at(root, path.slice(0, -1)) as Record<Prop, unknown>;
   const key = path[path.length - 1];

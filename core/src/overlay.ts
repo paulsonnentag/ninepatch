@@ -1,7 +1,4 @@
-/** One overlay per directory: a private path tree plus a URL area. Cuts
- * block fall-through past this overlay at a node and its subtree —
- * permanently. `mutated` fires on every mount and unmount; `entries()`
- * lists both areas. */
+// one overlay per directory: a private path tree plus a URL area
 
 import { Emitter, type Handle } from "./handle";
 import { isUrlRooted } from "./path";
@@ -12,15 +9,13 @@ export type OverlayNode = {
   cut: boolean;
 };
 
-/** One thing in an overlay: a mount, or a cut with nothing mounted over
- * it (no handle). URL-area paths start with the URL. */
+// a mount, or a cut with nothing mounted over it; URL paths start with the URL
 export type Entry = { path: string[]; handle: Handle<unknown> | undefined };
 
 export type Lookup = {
   handle: Handle<unknown> | undefined;
   hasEntries: boolean;
-  /** A cut on the way to (or at) this node: stop falling through past this
-   * overlay. */
+  /** A cut on the way to (or at) this node: stop falling through. */
   cutBlocked: boolean;
 };
 
@@ -66,8 +61,7 @@ export class Overlay {
     this.mutated.emit();
   }
 
-  /** Remove the subtree and cut fall-through at the node. Mounting over
-   * the cut is allowed; the cut itself never heals. */
+  /** Removes the subtree and cuts fall-through; the cut never heals. */
   unmount(names: string[]): void {
     const node = this.ensure(names);
     node.handle = undefined;

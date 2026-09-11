@@ -1,7 +1,5 @@
-/** Paths and URL detection. A path is a `/`-separated string or an array
- * of names. A path whose first name starts with a scheme is a URL and is
- * keyed in the URL area of each overlay. In string form `\/` is a literal
- * slash, `\:` a literal colon, `\\` a literal backslash. */
+// a path is a `/`-separated string or an array of names; a scheme in the
+// first name makes it a URL, keyed in the URL area of each overlay
 
 export type Path = string | string[];
 
@@ -33,6 +31,7 @@ export function startsWith(
   );
 }
 
+// `\/` is a literal slash, `\:` a literal colon, `\\` a literal backslash
 function splitString(path: string): string[] {
   if (path === "") return [];
   const names: string[] = [];

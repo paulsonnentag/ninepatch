@@ -1,9 +1,5 @@
-/** A handle is a live grip on a value: read it, write it, hear it change.
- * Branded, not duck-typed: things opt in by carrying the symbol, and
- * `mount` checks for it. A DocHandle is the model: `set` replaces,
- * `change` mutates in place, both fire. `subscribe` is the store contract
- * — the subscriber gets the value now and after every change — so a
- * handle drops straight into Solid's `from()` or Svelte's `$store`. */
+// a handle is a live grip on a value: read it, write it, hear it change;
+// `subscribe` is the store contract, so a handle drops into Solid's `from()`
 
 export const brand: unique symbol = Symbol.for("ninepatch.handle");
 
@@ -24,8 +20,7 @@ export function isHandle(x: unknown): x is Handle<unknown> {
   );
 }
 
-/** What `mount` does to a plain value: a mutable handle of the
- * directory's own. */
+/** What `mount` does to a plain value: a mutable handle. */
 export function wrap<T>(initial: T): Handle<T> {
   const changes = new Emitter();
   let current = initial;
@@ -49,8 +44,7 @@ export function wrap<T>(initial: T): Handle<T> {
   };
 }
 
-/** The structural surface of an automerge DocHandle — core takes it
- * structurally so it has no dependency on automerge-repo. */
+/** An automerge DocHandle, structurally — no automerge-repo dependency. */
 export type DocHandleLike<T> = {
   doc(): T | undefined;
   change(fn: (doc: T) => void): void;
@@ -58,8 +52,7 @@ export type DocHandleLike<T> = {
   off(event: "change", fn: () => void): void;
 };
 
-/** A handle over a document: value ← doc(), change ← change, subscribe ←
- * on/off. `readOnly` makes set/change throw (a pinned `#heads` view). */
+/** A handle over a document; `readOnly` makes set/change throw. */
 export function fromDoc<T>(
   handle: DocHandleLike<T>,
   options: { readOnly?: boolean } = {}
@@ -94,8 +87,7 @@ export function fromDoc<T>(
   };
 }
 
-/** A field of `source`, read through its value, written through its
- * `change`. */
+/** A field of `source`, read through its value, written through its `change`. */
 export function field<T>(source: Handle<unknown>, path: string[]): Handle<T> {
   const read = (value: unknown): T =>
     path.reduce<unknown>(
@@ -124,8 +116,7 @@ export function field<T>(source: Handle<unknown>, path: string[]): Handle<T> {
   };
 }
 
-/** A handle computed from another. Read-only unless `write` is given —
- * then `set` goes through it, a two-way lens over the source. */
+/** Computed from another; `write` makes `set` a two-way lens over the source. */
 export function derive<A, B>(
   source: Handle<A>,
   fn: (value: A) => B,
@@ -149,8 +140,7 @@ export function derive<A, B>(
   };
 }
 
-/** A read-only handle over a getter and the emitter that says when it
- * moved — what a directory's `entries` and `children` are. */
+/** Read-only, over a getter and the emitter that says when it moved. */
 export function readonly<T>(read: () => T, changes: Emitter): Handle<T> {
   return {
     [brand]: true,
@@ -170,8 +160,7 @@ export function readonly<T>(read: () => T, changes: Emitter): Handle<T> {
   };
 }
 
-/** Changes only: subscribe, but skip the synchronous first call. For code
- * that reacts to movement rather than consuming values. */
+/** Changes only: subscribe, minus the synchronous first call. */
 export function onChange(handle: Handle<unknown>, fn: () => void): () => void {
   let ready = false;
   const unsubscribe = handle.subscribe(() => {
