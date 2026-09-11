@@ -447,6 +447,12 @@ function Node(props: {
                           onClick={() =>
                             select(self, { row, dir: self, probe })
                           }
+                          onMouseEnter={(e) => setHoveredRow(e.currentTarget)}
+                          onMouseLeave={(e) =>
+                            setHoveredRow((r) =>
+                              r === e.currentTarget ? undefined : r
+                            )
+                          }
                         >
                           <FileIcon />
                           <span class="tree-name">{row.path.join("/")}</span>
@@ -481,10 +487,7 @@ function Node(props: {
                 <ProcNode
                   process={p}
                   open={code() === p}
-                  onToggle={() => {
-                    setCode(code() === p ? undefined : p);
-                    setFolded(false); // the lines need rows to land on
-                  }}
+                  onToggle={() => setCode(code() === p ? undefined : p)}
                 />
               )}
             </For>
@@ -499,10 +502,8 @@ function Node(props: {
                       source={sourceFor(p)}
                       anchor={el}
                       column={column()}
-                      close={() => {
-                        setCode(undefined);
-                        if (pinnedProc() === p) setPinnedProc(undefined);
-                      }}
+                      height={height()}
+                      close={() => setCode(undefined)}
                     />
                   </Portal>
                 )}
@@ -518,42 +519,42 @@ function Node(props: {
 
 // --- processes ------------------------------------------------------------
 
-/** Which process's lines are drawn: the hovered one, or the clicked one. */
+// what lights a line blue: the pill under the pointer lights all of its
+// process's lines, a line of code or an entry row lights just its own
 const [hoveredProc, setHoveredProc] = createSignal<Process>();
-const [pinnedProc, setPinnedProc] = createSignal<Process>();
-const focusedProc = () => hoveredProc() ?? pinnedProc();
-
-// the line of code under the pointer opens this entry of this process
 const [hoveredDep, setHoveredDep] = createSignal<{
   pid: Process["pid"];
   name: string;
 }>();
+const [hoveredRow, setHoveredRow] = createSignal<Element>();
+// the processes with lines drawn; their pills need no stub of their own
+const [linked, setLinked] = createSignal(new Set<Process["pid"]>());
 
-// a process beside its directory's window; hover runs lines to what it has
-// open, click pins them and opens the node up into a box of its source in
-// the code column; while open the pill is gone, the box is the node
+// a process beside its directory's window; hover lights its lines, click
+// opens the node up into a box of its source in the code column; while
+// open the pill is gone, the box is the node
 function ProcNode(props: {
   process: Process;
   open: boolean;
   onToggle: () => void;
 }) {
   const p = props.process;
-  onCleanup(() => {
-    if (pinnedProc() === p) setPinnedProc(undefined);
-    if (hoveredProc() === p) setHoveredProc(undefined);
-  });
+  const unhover = () => setHoveredProc((h) => (h === p ? undefined : h));
+  onCleanup(unhover);
+  createEffect(() => props.open && unhover()); // the pill vanished under the pointer
   return (
     <button
       class="proc"
-      classList={{ focused: focusedProc() === p, open: props.open }}
+      classList={{
+        focused: hoveredProc() === p,
+        open: props.open,
+        linked: linked().has(p.pid),
+      }}
       data-pid={p.pid}
       title={p.url}
       onMouseEnter={() => setHoveredProc(p)}
-      onMouseLeave={() => setHoveredProc((h) => (h === p ? undefined : h))}
-      onClick={() => {
-        setPinnedProc(props.open ? undefined : p);
-        props.onToggle();
-      }}
+      onMouseLeave={unhover}
+      onClick={props.onToggle}
     >
       <span class="proc-name">{p.name}</span>
     </button>
@@ -561,12 +562,13 @@ function ProcNode(props: {
 }
 
 // the process's source, read-only, in the code column level with its
-// directory window and as tall as it
+// directory window and as tall as it stands unfolded
 function CodeWindow(props: {
   process: Process;
   source: Source | undefined;
   anchor: HTMLElement;
   column: HTMLElement;
+  height: number;
   close: () => void;
 }) {
   const code = props.source?.code ?? `// no source for ${props.process.url}`;
@@ -574,7 +576,7 @@ function CodeWindow(props: {
     layout();
     const a = props.anchor.getBoundingClientRect();
     const c = props.column.getBoundingClientRect();
-    return { top: `${a.top - c.top}px`, height: `${a.height}px` };
+    return { "margin-top": `${a.top - c.top}px`, height: `${props.height}px` };
   });
   let host!: HTMLDivElement;
   onMount(() => {
@@ -593,25 +595,16 @@ function CodeWindow(props: {
     });
     onCleanup(() => view.destroy());
   });
-  // closed under the pointer: no mouseleave will come
-  onCleanup(() => setHoveredProc((h) => (h === props.process ? undefined : h)));
   const hover = (e: MouseEvent) => {
     const line = (e.target as Element).closest?.<HTMLElement>(".cm-opens");
     const name = line?.dataset.opens;
     setHoveredDep(name ? { pid: props.process.pid, name } : undefined);
   };
   return (
-    <div
-      class="code-window"
-      data-code-pid={props.process.pid}
-      style={box()}
-      onMouseEnter={() => setHoveredProc(props.process)}
-      onMouseLeave={() =>
-        setHoveredProc((h) => (h === props.process ? undefined : h))
-      }
-    >
+    <div class="code-window" data-code-pid={props.process.pid} style={box()}>
       <div class="code-titlebar" title={props.process.url}>
         <span class="code-title">{props.process.name}</span>
+        <span class="code-file">{props.source?.name}</span>
         <button class="fold code-close" title="close" onClick={props.close}>
           <CloseIcon />
         </button>
@@ -681,29 +674,24 @@ function ProcLines() {
     requestAnimationFrame(redraw); // after the code windows re-align
   });
 
-  /** The focused window changes size — fold, drag — without scrolling. */
-  createEffect(() => {
-    const p = focusedProc();
-    if (!p) return;
-    const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
-    const win = chip?.closest(".window-row")?.querySelector(".window");
-    if (!win) return;
-    const observer = new ResizeObserver(redraw);
-    observer.observe(win);
-    onCleanup(() => observer.disconnect());
-  });
-
   const lines = createMemo(() => {
     bump();
-    const focused = focusedProc();
+    const proc = hoveredProc();
+    const dep = hoveredDep();
+    const row = hoveredRow();
     const all = table().flatMap((p) =>
-      linesFor(p, opened().get(p) ?? []).map((d) => ({
-        d,
-        focused: p === focused,
+      linesFor(p, opened().get(p) ?? []).map((line) => ({
+        d: line.d,
+        pid: p.pid,
+        focused:
+          p === proc ||
+          (dep?.pid === p.pid && dep.name === line.name) ||
+          (row !== undefined && row === line.item),
       }))
     );
     return all.sort((a, b) => Number(a.focused) - Number(b.focused)); // colour on top
   });
+  createEffect(() => setLinked(new Set(lines().map((l) => l.pid))));
 
   return (
     <svg class="proc-lines" aria-hidden="true">
@@ -714,15 +702,23 @@ function ProcLines() {
   );
 }
 
+type Line = { d: string; name?: string; item?: Element };
+
 // a process's lines: from its node, or the code lines in its open box, down
 // the lane and into the rows it has open
-function linesFor(p: Process, names: string[]): string[] {
+function linesFor(p: Process, names: string[]): Line[] {
   const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
-  const body = chip
-    ?.closest(".window-row")
-    ?.querySelector(".window .window-body");
-  if (!chip || !body) return [];
+  const win = chip?.closest(".window-row")?.querySelector(".window");
+  const body = win?.querySelector(".window-body");
   const box = document.querySelector(`.code-window[data-code-pid="${p.pid}"]`);
+  if (!chip || !win) return [];
+  // the directory folded with the box open: one line, window to box
+  if (!body) {
+    if (!box) return [];
+    const w = win.getBoundingClientRect();
+    const c = box.getBoundingClientRect();
+    return [{ d: `M ${w.right} ${w.top + 16} L ${c.left} ${c.top + 16}` }];
+  }
   const source = box?.querySelector(".cm-scroller");
   // the node: the open box, or the pill in the lane
   const c = (box ?? chip).getBoundingClientRect();
@@ -735,7 +731,7 @@ function linesFor(p: Process, names: string[]): string[] {
   const selected = body.querySelector(".preview")
     ? body.querySelector(".tree-item.selected")?.getAttribute("data-path")
     : undefined;
-  const out: string[] = [];
+  const out: Line[] = [];
   for (const name of names) {
     if (selected !== undefined && name !== selected) continue;
     const item = body.querySelector(`[data-path="${CSS.escape(name)}"]`);
@@ -750,7 +746,8 @@ function linesFor(p: Process, names: string[]): string[] {
         ? { x: s.left, y: l.top + l.height / 2 }
         : fromChip;
     const end = selected !== undefined ? b.right : r.right - 6;
-    out.push(hook(start, trunk, { x: end, y: r.top + r.height / 2 }));
+    const d = hook(start, trunk, { x: end, y: r.top + r.height / 2 });
+    out.push({ d, name, item });
   }
   return out;
 }

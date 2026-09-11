@@ -186,8 +186,11 @@ body.dragging {
   min-width: 0;
 }
 
+/* every box sits in the one grid cell, pushed down to its window, so the
+   column is as tall as the lowest box */
 .code-column {
-  position: relative;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   flex: 1;
   min-width: 0;
 }
@@ -201,9 +204,9 @@ body.dragging {
 }
 
 .code-window {
-  position: absolute;
-  left: 0;
-  right: 0;
+  grid-area: 1 / 1;
+  align-self: start;
+  position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -221,8 +224,17 @@ body.dragging {
   height: 2rem;
   padding: 0 0.5rem 0 0.75rem;
   flex: none;
-  background: linear-gradient(#f4f4f4, #e8e8e8);
-  border-bottom: 1px solid #d4d4d4;
+  background: white;
+  border-bottom: 1px solid #e4e4e4;
+}
+
+.code-file {
+  margin-left: auto;
+  font:
+    0.7rem ui-monospace,
+    monospace;
+  color: var(--faint);
+  white-space: nowrap;
 }
 
 .code-title {
@@ -444,10 +456,14 @@ body.resizing {
   background: #c8c8cc;
 }
 
-.proc.focused,
-.proc.open {
+.proc.focused {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* a node with lines drawn needs no stub of its own */
+.proc.linked::before {
+  display: none;
 }
 
 /* open, the node is the code box in the column; the pill is gone */
