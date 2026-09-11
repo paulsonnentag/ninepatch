@@ -546,11 +546,39 @@ body.resizing {
   background: #efeff1;
 }
 
-/* where a selection below was inherited from, or the same url mounted in
-   another window */
+/* a selection in a window that isn't focused waits in gray */
+.window:not(.focused) .tree-item.selected,
+.window:not(.focused) .tree-item.selected:hover {
+  background: #e2e2e5;
+  color: var(--ink);
+}
+
+.window:not(.focused) .tree-item.selected code,
+.window:not(.focused) .tree-item.selected .url,
+.window:not(.focused) .tree-item.selected i {
+  color: var(--faint);
+}
+
+.window:not(.focused) .tree-item.selected .icon {
+  --icon: #6b7280;
+  --icon-fill: #f3f4f6;
+}
+
+.window.focused .titlebar {
+  background: linear-gradient(#eef3fd, #e0e9fb);
+}
+
+/* where the focused selection was inherited from, or the same url mounted
+   anywhere else on the page */
 .tree-item.origin,
-.tree-item.twin {
+.tree-item.twin,
+.window:not(.focused) .tree-item.selected.twin {
   background: #dbe7fd;
+  color: var(--ink);
+}
+
+.tree-item.twin .url {
+  color: var(--accent);
 }
 
 .tree-name {
@@ -955,18 +983,6 @@ body.resizing {
 }
 
 /* terminal */
-.faces {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.faces > .tool {
-  min-width: 0;
-  max-width: 100%;
-}
-
 .terminal {
   position: relative;
   margin: 0;

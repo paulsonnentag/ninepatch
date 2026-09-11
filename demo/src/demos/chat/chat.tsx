@@ -44,7 +44,7 @@ export default async function Chat(dir: Directory) {
             input.value = "";
           }}
         >
-          <input ref={input} placeholder={`say something as ${me().name}`} />
+          <input ref={input} placeholder="Message" />
           <button>send</button>
         </form>
       </div>

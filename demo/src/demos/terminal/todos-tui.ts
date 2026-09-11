@@ -1,5 +1,5 @@
 import type { Directory, Handle } from "@ninepatch/core";
-import type { Key, Screen, Size, TodoDoc } from "../../types";
+import type { Keyboard, Screen, Size, TodoDoc } from "../../types";
 import { blank, box, clip, restyle, text } from "./tui";
 
 type Ui = { at: number; mode: "list" | "prompt"; input: string };
@@ -9,49 +9,56 @@ const HINT = "↑↓ move · space toggle · a add · d delete";
 
 export default async function Todos(dir: Directory) {
   const doc = await dir.open<TodoDoc>("document");
-  const size = await dir.open<Size>("size");
   const screen = await dir.open<Screen>("screen");
-  const keys = await dir.open<Key | null>("keys");
+  const keyboard = await dir.open<Keyboard>("keyboard");
 
   const ui: Ui = { at: 0, mode: "list", input: "" };
+  let painted: Size | undefined;
   const paint = () => {
+    const { cols, rows } = screen.value;
+    painted = { cols, rows };
     ui.at = Math.max(0, Math.min(ui.at, doc.value.items.length - 1));
-    screen.set(draw(doc.value, size.value, ui));
+    screen.set(draw(doc.value, painted, ui));
   };
 
   let seen = 0;
   const unsubscribe = [
     doc.subscribe(paint),
-    size.subscribe(paint),
-    keys.subscribe((key) => {
-      if (!key || key.seq === seen) return; // subscribe replays the last press
-      seen = key.seq;
-      handle(key, ui, doc);
+    // the terminal was resized: anything else written to the screen stays
+    // until the next paint
+    screen.subscribe((s) => {
+      if (s.cols !== painted?.cols || s.rows !== painted?.rows) paint();
+    }),
+    keyboard.subscribe((k) => {
+      if (!k.pressedKey || k.seq === seen) return; // a release, or a replay
+      seen = k.seq;
+      handle(k, ui, doc);
       paint();
     }),
   ];
   dir.signal.addEventListener("abort", () => unsubscribe.forEach((u) => u()));
 }
 
-function handle(key: Key, ui: Ui, doc: Handle<TodoDoc>): void {
+function handle(k: Keyboard, ui: Ui, doc: Handle<TodoDoc>): void {
+  const key = k.pressedKey!;
   if (ui.mode === "prompt") {
-    if (key.key === "Escape") {
+    if (key === "Escape") {
       ui.mode = "list";
       ui.input = "";
-    } else if (key.key === "Enter") {
+    } else if (key === "Enter") {
       const text = ui.input.trim();
       if (text) doc.change((d) => d.items.push({ text, done: false }));
       ui.input = "";
       ui.mode = "list";
       ui.at = doc.value.items.length - 1;
-    } else if (key.key === "Backspace") {
+    } else if (key === "Backspace") {
       ui.input = ui.input.slice(0, -1);
-    } else if (key.key.length === 1 && !key.ctrl && !key.alt) {
-      ui.input += key.key;
+    } else if (key.length === 1 && !k.ctrl && !k.alt) {
+      ui.input += key;
     }
     return;
   }
-  switch (key.key) {
+  switch (key) {
     case "ArrowUp":
     case "k":
       ui.at--;

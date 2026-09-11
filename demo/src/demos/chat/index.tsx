@@ -1,5 +1,5 @@
 import type { AnyDocumentId } from "@automerge/automerge-repo";
-import { frame, moduleUrl, repo, seed } from "../../boot";
+import { frame, moduleUrl, repo, seed, seedChatMessages } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { ChatDoc } from "../../types";
 import chatSource from "./chat.tsx?raw";
@@ -29,7 +29,10 @@ export function ChatDemo() {
 
 async function reset() {
   const doc = await repo.find<ChatDoc>(seed.chat as AnyDocumentId);
-  doc.change((d) => d.messages.splice(0, d.messages.length));
+  doc.change((d) => {
+    d.messages.splice(0, d.messages.length);
+    d.messages.push(...seedChatMessages());
+  });
 }
 
 const chat = frame.fork("chat");

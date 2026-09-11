@@ -5,6 +5,7 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createRoot,
   createSignal,
   ErrorBoundary,
   For,
@@ -229,35 +230,66 @@ function Windows(props: {
   chain: Directory[];
   onFocusProcess?: (p: Process) => void;
 }) {
-  const [selection, select] = createSignal<Selection>();
-  // the selected entry's value while it is a url: the same url mounted in
-  // another window is lit as well
-  const [selectedUrl, setSelectedUrl] = createSignal<string>();
-  createEffect(() => {
-    const sel = selection();
-    if (!sel) return setSelectedUrl(undefined);
-    const unsub = sel.row.handle.subscribe((v) =>
-      setSelectedUrl(typeof v === "string" && hasScheme(v) ? v : undefined)
-    );
-    onCleanup(unsub);
-  });
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
   mountHighlight();
   mountProcLines();
+  trackFocusedUrl();
   return (
     <div class="windows" role="tree">
       <Node
         chain={props.chain}
         depth={0}
-        selection={selection}
-        selectedUrl={selectedUrl}
-        select={select}
         registry={registry}
         processes={table}
         onFocusProcess={props.onFocusProcess}
       />
     </div>
+  );
+}
+
+// --- selection ------------------------------------------------------------------
+
+// Every window keeps its own selection; one window on the page is focused.
+// The focused window's selection is blue, the others' gray, and the same
+// url as the focused selection is lit wherever it is mounted, in any
+// section. Page-wide, like the process lines.
+const [selections, setSelections] = createSignal<Map<Directory, Selection>>(
+  new Map()
+);
+const [focusedWindow, setFocusedWindow] = createSignal<Directory>();
+const focusedSelection = () => {
+  const dir = focusedWindow();
+  return dir && selections().get(dir);
+};
+const [focusedUrl, setFocusedUrl] = createSignal<string>();
+
+function select(dir: Directory, sel: Selection | undefined): void {
+  setSelections((prev) => {
+    const next = new Map(prev);
+    if (sel) next.set(dir, sel);
+    else next.delete(dir);
+    return next;
+  });
+  if (sel) setFocusedWindow(dir);
+  else if (focusedWindow() === dir) setFocusedWindow(undefined);
+}
+
+let focusedUrlTracked = false;
+
+// the focused selection's value while it is a url, followed live
+function trackFocusedUrl() {
+  if (focusedUrlTracked) return;
+  focusedUrlTracked = true;
+  createRoot(() =>
+    createEffect(() => {
+      const sel = focusedSelection();
+      if (!sel) return setFocusedUrl(undefined);
+      const unsub = sel.row.handle.subscribe((v) =>
+        setFocusedUrl(typeof v === "string" && hasScheme(v) ? v : undefined)
+      );
+      onCleanup(unsub);
+    })
   );
 }
 
@@ -267,9 +299,6 @@ function Windows(props: {
 function Node(props: {
   chain: Directory[];
   depth: number;
-  selection: Accessor<Selection | undefined>;
-  selectedUrl: Accessor<string | undefined>;
-  select: (sel: Selection | undefined) => void;
   registry: Registry;
   processes: Accessor<Process[]>;
   onFocusProcess?: (p: Process) => void;
@@ -321,15 +350,13 @@ function Node(props: {
     addEventListener("pointerup", stop);
   };
 
-  /** The tree's selection, if it was made in this window. */
-  const mine = () => {
-    const sel = props.selection();
-    return sel?.dir === self ? sel : undefined;
-  };
+  const mine = () => selections().get(self);
+  const isFocused = () => focusedWindow() === self;
   const isSelected = (row: EntryRow) => mine()?.row.key === row.key;
-  // this row is where a selection in some window below was inherited from
+  // this row is where the focused selection, in a window below, was
+  // inherited from
   const isOrigin = (row: EntryRow) => {
-    const sel = props.selection();
+    const sel = focusedSelection();
     return (
       sel !== undefined &&
       sel.dir !== self &&
@@ -337,11 +364,11 @@ function Node(props: {
       sel.row.key === row.key
     );
   };
-  /** A selection elsewhere holds a url, and this row holds the same one. */
-  const isTwin = (value: unknown) => {
-    const url = props.selectedUrl();
+  // this row holds the same url as the focused selection, anywhere on the page
+  const isTwin = (row: EntryRow, value: unknown) => {
+    const url = focusedUrl();
     return (
-      url !== undefined && props.selection()?.dir !== self && value === url
+      url !== undefined && value === url && !(isFocused() && isSelected(row))
     );
   };
 
@@ -357,12 +384,10 @@ function Node(props: {
     const sel = mine();
     if (!sel) return;
     const row = rows().find((r) => r.key === sel.row.key);
-    if (!row) props.select(undefined);
-    else if (row !== sel.row) props.select({ ...sel, row });
+    if (!row) select(self, undefined);
+    else if (row !== sel.row) select(self, { ...sel, row });
   });
-  onCleanup(() => {
-    if (mine()) props.select(undefined);
-  });
+  onCleanup(() => select(self, undefined));
 
   const below = () => (
     <For each={children()}>
@@ -370,9 +395,6 @@ function Node(props: {
         <Node
           chain={[...props.chain, child]}
           depth={transparent() ? props.depth : props.depth + 1}
-          selection={props.selection}
-          selectedUrl={props.selectedUrl}
-          select={props.select}
           registry={props.registry}
           processes={props.processes}
           onFocusProcess={props.onFocusProcess}
@@ -387,9 +409,14 @@ function Node(props: {
         <div class="window-row">
           <div
             class="window"
-            classList={{ open: mine() !== undefined, folded: folded() }}
+            classList={{
+              open: mine() !== undefined,
+              focused: isFocused(),
+              folded: folded(),
+            }}
             style={{ "--height": `${height()}px` }}
             ref={el}
+            onPointerDown={() => setFocusedWindow(self)}
           >
             <div class="titlebar" title={self.name}>
               <span class="window-title">{label(self.name)}</span>
@@ -415,7 +442,7 @@ function Node(props: {
                           classList={{
                             selected: isSelected(row),
                             origin: isOrigin(row),
-                            twin: isTwin(value()),
+                            twin: isTwin(row, value()),
                             inherited: row.inherited,
                           }}
                           title={
@@ -424,7 +451,7 @@ function Node(props: {
                               : `mounted here`
                           }
                           onClick={() =>
-                            props.select({ row, dir: self, probe })
+                            select(self, { row, dir: self, probe })
                           }
                         >
                           <FileIcon />
@@ -446,7 +473,7 @@ function Node(props: {
                     <Preview
                       selection={sel}
                       reveal={(dir) => props.registry.get(dir)?.()}
-                      close={() => props.select(undefined)}
+                      close={() => select(self, undefined)}
                     />
                   )}
                 </Show>

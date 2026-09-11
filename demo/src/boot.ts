@@ -84,7 +84,7 @@ async function findOrCreateSeed(): Promise<Seed> {
   if (!url) {
     const alice = repo.create<ContactDoc>({ name: "Alice", color: "#e11d48" });
     const bob = repo.create<ContactDoc>({ name: "Bob", color: "#2563eb" });
-    const chat = repo.create<ChatDoc>({ messages: [] });
+    const chat = repo.create<ChatDoc>({ messages: seedChatMessages() });
     // Every place is its own document; the canvas doc only stores which
     // component renders each item, which document it edits, and where.
     const canvas = repo.create<CanvasDoc>({ items: seedCanvasItems() });
@@ -180,7 +180,26 @@ async function findOrCreateSeed(): Promise<Seed> {
 // component renders each item, which document it edits, and where.
 // The canvas demo's reset builds the same set.
 export function seedTodoItems(): TodoDoc["items"] {
-  return [{ text: "open this page in a second tab", done: false }];
+  return [
+    { text: "buy groceries", done: false },
+    { text: "water the plants", done: false },
+    { text: "call the dentist", done: false },
+    { text: "take out the trash", done: true },
+  ];
+}
+
+export function seedChatMessages(): ChatDoc["messages"] {
+  const at = Date.now();
+  return [
+    {
+      author: "Alice",
+      color: "#e11d48",
+      text: "Did you pick up the groceries?",
+      at,
+    },
+    { author: "Bob", color: "#2563eb", text: "Yep, just got back.", at },
+    { author: "Alice", color: "#e11d48", text: "Great, thanks!", at },
+  ];
 }
 
 export function seedCanvasItems(): Record<string, CanvasItem> {

@@ -23,7 +23,7 @@ export function TodosDemo() {
   );
 }
 
-async function reset() {
+export async function reset() {
   const doc = await repo.find<TodoDoc>(seed.todos as AnyDocumentId);
   doc.change((d) => {
     d.items.splice(0, d.items.length);
