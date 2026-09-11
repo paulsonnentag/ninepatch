@@ -5,7 +5,7 @@ import type { ChatDoc, ContactDoc } from "../types";
 
 export default async function Chat(dir: Directory) {
   const dom = await dir.open<Element>("dom");
-  const doc = await dir.open<ChatDoc>("doc");
+  const doc = await dir.open<ChatDoc>("document");
   const user = await dir.open<ContactDoc>("user");
 
   const dispose = render(() => {

@@ -5,7 +5,7 @@ import type { TodoDoc } from "../types";
 
 export default async function Todos(dir: Directory) {
   const dom = await dir.open<Element>("dom");
-  const doc = await dir.open<TodoDoc>("doc");
+  const doc = await dir.open<TodoDoc>("document");
 
   const dispose = render(() => {
     const state = from(doc, doc.value);

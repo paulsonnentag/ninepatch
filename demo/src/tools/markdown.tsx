@@ -14,8 +14,8 @@ import type { MarkdownDoc } from "../types";
 
 export default async function Markdown(dir: Directory) {
   const dom = await dir.open<Element>("dom");
-  const doc = await dir.open<MarkdownDoc>("selectedDoc"); // follows the link, and keeps following
-  const selected = await dir.open<string>("selectedDoc"); // the same name for rebinding: navigation
+  const doc = await dir.open<MarkdownDoc>("document"); // follows the link, and keeps following
+  const selected = await dir.open<string>("document"); // the same name for rebinding: navigation
 
   const host = dom.value.appendChild(document.createElement("div"));
   host.className = "editor";

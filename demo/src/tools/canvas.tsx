@@ -10,7 +10,7 @@ import type { CanvasDoc } from "../types";
  * knows nothing about what the items are. */
 export default async function Canvas(dir: Directory) {
   const dom = await dir.open<Element>("dom");
-  const doc = await dir.open<CanvasDoc>("doc");
+  const doc = await dir.open<CanvasDoc>("document");
   const selection = await dir.open<string | null>("selection");
   const dispose = render(() => {
     const state = from(doc, doc.value);

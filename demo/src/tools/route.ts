@@ -5,7 +5,7 @@ const KEY = "ninepatch:demo:route";
 
 /** The route lives in the directory as `url`: literally the part after
  * the host, `/automerge:…`, remembered in local storage between visits.
- * `selectedDoc` is the same thing as a two-way lens — a live link whose
+ * `document` is the same thing as a two-way lens — a live link whose
  * `set` writes back through `url` — so the browser owns the encoding in
  * both directions: the bar writes the url, the editor rebinds the doc,
  * and each sees the other's move. */
@@ -20,7 +20,7 @@ export default async function Route(dir: Directory) {
   const url = await dir.open<string>("url");
   url.subscribe((p) => localStorage.setItem(KEY, p));
   dir.mount(
-    "selectedDoc",
+    "document",
     derive(
       url,
       (p) => p.slice(1), // decoded; a URL string is a live link

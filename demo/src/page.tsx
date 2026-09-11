@@ -28,15 +28,15 @@ root.mount("selection", null as string | null); // a plain value; never touches 
 await root.spawn("Places", moduleUrl("places.ts")).terminated; // follows the items' docs, mounts `places`
 
 const browser = frame.fork("browser");
-await browser.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `url` and `selectedDoc`
+await browser.spawn("Route", moduleUrl("route.ts")).terminated; // mounts `url` and `document`
 
 // --- the tools, as components: every extra prop is a mounted entry -----------
 
-const Todos = createComponent<{ doc: string }>(moduleUrl("todos.tsx"));
-const Chat = createComponent<{ doc: string; user: string }>(
+const Todos = createComponent<{ document: string }>(moduleUrl("todos.tsx"));
+const Chat = createComponent<{ document: string; user: string }>(
   moduleUrl("chat.tsx")
 );
-const Canvas = createComponent<{ doc: string }>(moduleUrl("canvas.tsx"));
+const Canvas = createComponent<{ document: string }>(moduleUrl("canvas.tsx"));
 const UrlBar = createComponent(moduleUrl("urlbar.tsx"));
 const Markdown = createComponent(moduleUrl("markdown.tsx"));
 
@@ -67,7 +67,7 @@ export function Page() {
           </p>
         }
       >
-        <Todos dir={todos} doc={seed.todos} />
+        <Todos dir={todos} document={seed.todos} />
       </Section>
 
       <Section
@@ -83,8 +83,13 @@ export function Page() {
         }
       >
         <div class="row">
-          <Chat dir={chat} name="Alice" doc={seed.chat} user={seed.alice} />
-          <Chat dir={chat} name="Bob" doc={seed.chat} user={seed.bob} />
+          <Chat
+            dir={chat}
+            name="Alice"
+            document={seed.chat}
+            user={seed.alice}
+          />
+          <Chat dir={chat} name="Bob" document={seed.chat} user={seed.bob} />
         </div>
       </Section>
 
@@ -107,7 +112,7 @@ export function Page() {
           </p>
         }
       >
-        <Canvas dir={root} doc={seed.canvas} />
+        <Canvas dir={root} document={seed.canvas} />
       </Section>
 
       <Section
@@ -121,8 +126,8 @@ export function Page() {
         prose={
           <p>
             A <code>Route</code> process keeps the part after the host in the
-            directory as <code>url</code> and mounts <code>selectedDoc</code> as
-            a two-way lens over it, so the bar only ever writes the url, the
+            directory as <code>url</code> and mounts <code>document</code> as a
+            two-way lens over it, so the bar only ever writes the url, the
             editor only ever rebinds the doc, and each follows the other.
           </p>
         }

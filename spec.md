@@ -16,11 +16,11 @@ kill it.
 
 ### Directories
 
-A directory is a collection of named things — `dom`, `doc`, `user`,
+A directory is a collection of named things — `dom`, `document`, `user`,
 `automerge:x…` — and each name holds a handle. You get the first one from
 `createDirectory()`; every other directory comes from one you already have,
-in one of two ways. `open("doc")` gives you a directory for what is at
-`doc`: its names are the things below `doc`. `fork()` gives you a second
+in one of two ways. `open("document")` gives you a directory for what is
+at `document`: its names are the things below `document`. `fork()` gives you a second
 directory with the same names as the one you forked.
 
 Every directory has a private layer on top of what it came from.
@@ -34,14 +34,14 @@ directory sees its own names and what is below them, nothing above.
 
 This is what makes a directory the thing you hand to a component. Fork,
 mount what it should see, hide what it shouldn't, hand it over. The
-component can't tell whether `doc` was mounted just for it or inherited
+component can't tell whether `document` was mounted just for it or inherited
 from the page, and it can't reach anything you didn't give it.
 
 Underneath, a directory is exactly three things: its own entries, the
 directory it came from, and the path it was opened at inside that
-directory — `["doc"]` for `open("doc")`, `[]` for a fork. Reading
-`messages` in a directory opened at `doc` looks in its own entries for
-`messages`, then asks its parent for `doc/messages`, which looks in its own
+directory — `["document"]` for `open("document")`, `[]` for a fork.
+Reading `messages` in a directory opened at `document` looks in its own
+entries for `messages`, then asks its parent for `document/messages`, which looks in its own
 entries and asks its parent, and so on. Every path is relative to the
 directory you ask it of; nothing anywhere holds an absolute one. That is
 why you can't look up: there is no address to climb back to, only a parent
@@ -61,12 +61,13 @@ a handle — an automerge document via `fromDoc`, a derivation via `derive`,
 another directory — and it is used as is, behavior included.
 
 A directory opened at a name that holds a value is both: `open<ChatDoc>
-("doc")` is a directory (open `doc/messages` from it, mount below it) and
+("document")` is a directory (open `document/messages` from it, mount
+below it) and
 a handle (read, change, subscribe). The two don't interfere: mounting under
 a document adds a name the document never sees, and changing the document
 never touches what is mounted.
 
-Live means live. If someone above you remounts `doc`, or the link you came
+Live means live. If someone above you remounts `document`, or the link you came
 through is retargeted, your handle now reads the new thing and your
 subscribers hear about it. If there is suddenly nothing there, `value`
 throws `NotFound` and subscribers stay quiet until something is there
@@ -409,8 +410,8 @@ flows back through the source.
 
 ```ts
 const url = await page.open<string>("url")                   // "/automerge:doc…" — the encoded route
-page.mount("selectedDoc", derive(url, (u) => u.slice(1), (doc) => url.set(`/${doc}`)))
-const selected = await page.open<Doc>("selectedDoc")
+page.mount("document", derive(url, (u) => u.slice(1), (doc) => url.set(`/${doc}`)))
+const selected = await page.open<Doc>("document")
 selected.subscribe(show)                                     // called again when url changes
 selected.set("automerge:other…")                             // rebinds through the lens: url follows
 ```
@@ -431,7 +432,7 @@ async function Frame(dir: Directory) {
   const child = dir.fork("markdown")
   child.mount("dom", slot)
   child.unmount("account")                         // cut for child and below
-  child.mount("selectedDoc", "automerge:other…")   // shadows; Frame's view unchanged
+  child.mount("document", "automerge:other…")     // shadows; Frame's view unchanged
   child.spawn("Markdown", import.meta.resolve("./markdown.ts"))
 
   dir.signal.addEventListener("abort", () => slot.remove())
@@ -444,7 +445,7 @@ as stores.
 ```tsx
 export default async function Chat(dir: Directory) {
   const dom = await dir.open<Element>("dom")
-  const doc = await dir.open<ChatDoc>("doc")
+  const doc = await dir.open<ChatDoc>("document")
   const dispose = render(() => {
     const chat = from(doc, doc.value)          // a handle is a store
     return <ul>{chat().messages.map(…)}</ul>
@@ -486,7 +487,7 @@ function draw(dir: Directory, depth = 0) {
 
 const bob = page.fork("Bob")
 bob.mount("dom", slot)
-bob.spawn("Chat", import.meta.resolve("./chat.tsx"))   // opens "doc" — a fill lands in bob's entries
+bob.spawn("Chat", import.meta.resolve("./chat.tsx"))   // opens "document" — a fill lands in bob's entries
 bob.entries.subscribe(() => draw(page))    // page › Bob › { dom: <div>, automerge:chat…: {…} }
 ```
 
@@ -503,7 +504,7 @@ root.processes.subscribe((ps) => {
     console.log(p.name, "at", p.at.name, p.url, "open:", p.dir.children.value.map((c) => c.name))
 })
 // Places at places http://…/places.ts open: ["demo/canvas"]
-// Canvas at Canvas http://…/canvas.tsx open: ["dom", "doc", "selection"]
+// Canvas at Canvas http://…/canvas.tsx open: ["dom", "document", "selection"]
 // Map at Map http://…/map.tsx open: ["dom", "places", "selection"]
 
 root.processes.value.find((p) => p.name === "Map")?.dir.close()   // its opens close; the Map directory stays
