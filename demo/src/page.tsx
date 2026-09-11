@@ -1,11 +1,5 @@
-/** The page: four demos, each in its own folder under `demos/` with the
- * tools it spawns and the section that hosts them. Every demo gets its own
- * named fork of the page's directory, and everything that runs — the
- * tools, the host's own derivations — is a process spawned there, so the
- * data panel shows exactly that demo's world: windows for directories,
- * nodes beside them for what runs in them. */
-
 import { TodosDemo } from "./demos/todos";
+import { TerminalDemo } from "./demos/terminal";
 import { ChatDemo } from "./demos/chat";
 import { CanvasDemo } from "./demos/canvas";
 import { BrowserDemo } from "./demos/browser";
@@ -25,6 +19,7 @@ export function Page() {
       </header>
 
       <TodosDemo />
+      <TerminalDemo />
       <ChatDemo />
       <CanvasDemo />
       <BrowserDemo />

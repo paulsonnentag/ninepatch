@@ -83,6 +83,8 @@ export function Section(props: {
   /** The section's directory, last, with everything it was forked from
    * before it — that's where its inherited entries come from. */
   chain: Directory[];
+  /** Puts the demo's documents back in their seeded state. */
+  reset?: () => void;
   children: JSX.Element;
 }) {
   const [widths, setWidths] = createSignal([1, 1, 1]);
@@ -140,7 +142,14 @@ export function Section(props: {
         }}
       >
         <div class="panel example">
-          <h3>preview</h3>
+          <h3>
+            preview
+            <Show when={props.reset}>
+              <button class="reset" onClick={() => props.reset!()}>
+                reset
+              </button>
+            </Show>
+          </h3>
           <div class="panel-body live">{props.children}</div>
         </div>
         <div class="divider" onPointerDown={[drag, 0]} />
@@ -233,22 +242,25 @@ type Registry = Map<Directory, () => void>;
 
 /** The directories of a section: one window per directory, hung in their
  * hierarchy, with the processes running at each one as nodes beside its
- * window. Selecting an entry opens a preview inside its window — each
- * window keeps a selection of its own. */
+ * window. Selecting an entry opens a preview inside its window; there is
+ * one selection for the whole tree, so picking in one window closes the
+ * others. */
 function Windows(props: {
   chain: Directory[];
   onFocusProcess?: (p: Process) => void;
 }) {
-  const [selections, setSelections] = createSignal<Map<Directory, Selection>>(
-    new Map()
-  );
-  const select = (dir: Directory, sel: Selection | undefined) =>
-    setSelections((prev) => {
-      const next = new Map(prev);
-      if (sel) next.set(dir, sel);
-      else next.delete(dir);
-      return next;
-    });
+  const [selection, select] = createSignal<Selection>();
+  // the selected entry's value while it is a url: the same url mounted in
+  // another window is lit as well
+  const [selectedUrl, setSelectedUrl] = createSignal<string>();
+  createEffect(() => {
+    const sel = selection();
+    if (!sel) return setSelectedUrl(undefined);
+    const unsub = sel.row.handle.subscribe((v) =>
+      setSelectedUrl(typeof v === "string" && hasScheme(v) ? v : undefined)
+    );
+    onCleanup(unsub);
+  });
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
   mountHighlight();
@@ -258,7 +270,8 @@ function Windows(props: {
       <Node
         chain={props.chain}
         depth={0}
-        selections={selections}
+        selection={selection}
+        selectedUrl={selectedUrl}
         select={select}
         registry={registry}
         processes={table}
@@ -281,8 +294,9 @@ function Windows(props: {
 function Node(props: {
   chain: Directory[];
   depth: number;
-  selections: Accessor<Map<Directory, Selection>>;
-  select: (dir: Directory, sel: Selection | undefined) => void;
+  selection: Accessor<Selection | undefined>;
+  selectedUrl: Accessor<string | undefined>;
+  select: (sel: Selection | undefined) => void;
   registry: Registry;
   processes: Accessor<Process[]>;
   onFocusProcess?: (p: Process) => void;
@@ -338,16 +352,30 @@ function Node(props: {
     addEventListener("pointerup", stop);
   };
 
-  /** This window's own selection — every window keeps one. */
-  const mine = () => props.selections().get(self);
+  /** The tree's selection, if it was made in this window. */
+  const mine = () => {
+    const sel = props.selection();
+    return sel?.dir === self ? sel : undefined;
+  };
   const isSelected = (row: EntryRow) => mine()?.row.key === row.key;
   /** This row is where a selection in some window below was inherited
    * from. */
-  const isOrigin = (row: EntryRow) =>
-    [...props.selections().values()].some(
-      (sel) =>
-        sel.dir !== self && sel.row.owner === self && sel.row.key === row.key
+  const isOrigin = (row: EntryRow) => {
+    const sel = props.selection();
+    return (
+      sel !== undefined &&
+      sel.dir !== self &&
+      sel.row.owner === self &&
+      sel.row.key === row.key
     );
+  };
+  /** A selection elsewhere holds a url, and this row holds the same one. */
+  const isTwin = (value: unknown) => {
+    const url = props.selectedUrl();
+    return (
+      url !== undefined && props.selection()?.dir !== self && value === url
+    );
+  };
 
   props.registry.set(self, () => {
     setFolded(false);
@@ -361,10 +389,12 @@ function Node(props: {
     const sel = mine();
     if (!sel) return;
     const row = rows().find((r) => r.key === sel.row.key);
-    if (!row) props.select(self, undefined);
-    else if (row !== sel.row) props.select(self, { ...sel, row });
+    if (!row) props.select(undefined);
+    else if (row !== sel.row) props.select({ ...sel, row });
   });
-  onCleanup(() => props.select(self, undefined));
+  onCleanup(() => {
+    if (mine()) props.select(undefined);
+  });
 
   const below = () => (
     <For each={children()}>
@@ -372,7 +402,8 @@ function Node(props: {
         <Node
           chain={[...props.chain, child]}
           depth={transparent() ? props.depth : props.depth + 1}
-          selections={props.selections}
+          selection={props.selection}
+          selectedUrl={props.selectedUrl}
           select={props.select}
           registry={props.registry}
           processes={props.processes}
@@ -407,35 +438,39 @@ function Node(props: {
               <div class="window-body">
                 <div class="entries">
                   <For each={rows()}>
-                    {(row) => (
-                      <div
-                        class="tree-item"
-                        data-path={row.key}
-                        classList={{
-                          selected: isSelected(row),
-                          origin: isOrigin(row),
-                          inherited: row.inherited,
-                        }}
-                        title={
-                          row.inherited
-                            ? `from ${row.owner.name}`
-                            : `mounted here`
-                        }
-                        onClick={() =>
-                          props.select(self, { row, dir: self, probe })
-                        }
-                      >
-                        <FileIcon />
-                        <span class="tree-name">{row.path.join("/")}</span>
-                        <span class="tree-value">
-                          <Value
-                            handle={row.handle}
-                            path={row.path}
-                            probe={probe}
-                          />
-                        </span>
-                      </div>
-                    )}
+                    {(row) => {
+                      const value = from(row.handle, readValue(row.handle));
+                      return (
+                        <div
+                          class="tree-item"
+                          data-path={row.key}
+                          classList={{
+                            selected: isSelected(row),
+                            origin: isOrigin(row),
+                            twin: isTwin(value()),
+                            inherited: row.inherited,
+                          }}
+                          title={
+                            row.inherited
+                              ? `from ${row.owner.name}`
+                              : `mounted here`
+                          }
+                          onClick={() =>
+                            props.select({ row, dir: self, probe })
+                          }
+                        >
+                          <FileIcon />
+                          <span class="tree-name">{row.path.join("/")}</span>
+                          <span class="tree-value">
+                            <Value
+                              handle={row.handle}
+                              path={row.path}
+                              probe={probe}
+                            />
+                          </span>
+                        </div>
+                      );
+                    }}
                   </For>
                 </div>
                 <Show when={mine()} keyed>
@@ -443,7 +478,7 @@ function Node(props: {
                     <Preview
                       selection={sel}
                       reveal={(dir) => props.registry.get(dir)?.()}
-                      close={() => props.select(self, undefined)}
+                      close={() => props.select(undefined)}
                     />
                   )}
                 </Show>

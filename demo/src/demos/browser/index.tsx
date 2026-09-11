@@ -1,5 +1,7 @@
-import { frame, moduleUrl } from "../../boot";
+import type { AnyDocumentId } from "@automerge/automerge-repo";
+import { frame, moduleUrl, repo, seed } from "../../boot";
 import { createComponent, Section } from "../../harness";
+import type { MarkdownDoc } from "../../types";
 import routeSource from "./route.ts?raw";
 import urlbarSource from "./urlbar.tsx?raw";
 import markdownSource from "./markdown.tsx?raw";
@@ -9,6 +11,7 @@ export function BrowserDemo() {
     <Section
       title="The URL is a text field"
       chain={[frame, browser]}
+      reset={reset}
       sources={[
         { name: "route.ts", code: routeSource },
         { name: "urlbar.tsx", code: urlbarSource },
@@ -40,7 +43,20 @@ export function BrowserDemo() {
   );
 }
 
+async function reset() {
+  const notes = await repo.find<MarkdownDoc>(seed.notes as AnyDocumentId);
+  const notes2 = await repo.find<MarkdownDoc>(seed.notes2 as AnyDocumentId);
+  notes.change((d) => {
+    d.content = `# Notes\n\nType here. Open the page in a second tab and type there too.\n\nMore in [the second document](/${seed.notes2}).\n`;
+  });
+  notes2.change((d) => {
+    d.content = `# The second document\n\nSwitch back and forth with the bar or the link back to [notes](/${seed.notes}).\n`;
+  });
+  url.set(`/${seed.notes}`);
+}
+
 const browser = frame.fork("browser");
 await browser.spawn("Route", moduleUrl("browser/route.ts")).terminated; // mounts `url` and `document`
+const url = await browser.open<string>("url");
 const UrlBar = createComponent(moduleUrl("browser/urlbar.tsx"));
 const Markdown = createComponent(moduleUrl("browser/markdown.tsx"));

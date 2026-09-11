@@ -1,10 +1,8 @@
 import type { Directory } from "@ninepatch/core";
 import type { CanvasDoc, Place, PlaceDoc } from "../../types";
 
-/** The aggregation, as a process: watch the canvas document, follow every
- * item's `docUrl`, and keep `places` mounted in the shared directory the
- * way the map wants it. Duck-typed: anything whose document has a title
- * and coordinates is a place — the map never learns what an item is. */
+// watches the canvas document, follows every item's docUrl, and keeps
+// `places` mounted — anything with a title and coordinates is a place
 export default async function Places(dir: Directory) {
   const canvas = await dir.open<CanvasDoc>("demo/canvas");
   dir.mount("places", [] as Place[]);

@@ -81,6 +81,7 @@ pre {
   resize: vertical;
   overflow: hidden;
   min-height: 12rem;
+  max-height: 40rem; /* taller content scrolls inside the panes */
 }
 
 .panel.example,
@@ -105,6 +106,9 @@ pre {
 }
 
 .panel h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   margin: 0;
   padding: 0 1rem 0.4rem;
   font-size: 0.75rem;
@@ -112,6 +116,22 @@ pre {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--faint);
+}
+
+/* the reset button sits in the label row, styled like the label */
+.panel h3 .reset {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.panel h3 .reset:hover {
+  color: var(--accent);
 }
 
 /* the first pane lines up with the text above it */
@@ -244,7 +264,7 @@ body.dragging {
    on the left, and the selection previewed in a window on the right */
 .panel.context .panel-body {
   padding: 0;
-  overflow: visible;
+  overflow: auto; /* the band is capped; a tall data panel scrolls */
 }
 
 .windows {
@@ -526,8 +546,10 @@ body.resizing {
   background: #efeff1;
 }
 
-/* where a selection below was inherited from */
-.tree-item.origin {
+/* where a selection below was inherited from, or the same url mounted in
+   another window */
+.tree-item.origin,
+.tree-item.twin {
   background: #dbe7fd;
 }
 
@@ -932,6 +954,76 @@ body.resizing {
   min-width: 0;
 }
 
+/* terminal */
+.faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.faces > .tool {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.terminal {
+  position: relative;
+  margin: 0;
+  width: 480px;
+  max-width: 100%;
+  height: 260px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1b1e24;
+  color: #d6dae2;
+  font:
+    13px/1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace; /* tight enough that box-drawing glyphs join */
+  overflow: hidden;
+  outline: none;
+  user-select: none;
+  cursor: text;
+}
+
+.terminal.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.25);
+}
+
+.term-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.term-row {
+  white-space: pre;
+}
+
+.terminal .inverse {
+  background: #d6dae2;
+  color: #1b1e24;
+}
+
+.terminal .bold {
+  font-weight: 600;
+}
+
+.terminal .cursor {
+  outline: 1px solid #d6dae2;
+  outline-offset: -1px;
+}
+
+.terminal.focused .cursor {
+  background: #d6dae2;
+  color: #1b1e24;
+  outline: none;
+}
+
 /* chat */
 .chat {
   border: 1px solid var(--line);
@@ -975,6 +1067,7 @@ body.resizing {
 
 /* one canvas: every item is a process in a wrapper the canvas drags */
 .board {
+  outline: none; /* focus is for backspace, not a ring */
   position: relative;
   height: 420px;
   border: 1px solid var(--line);
@@ -997,10 +1090,10 @@ body.resizing {
   z-index: 1;
 }
 
-.item.selected {
+/* the ring hugs the visible box (card, map frame), not the drag rim */
+.item.selected > * {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: -1px;
-  border-radius: 9px;
+  outline-offset: 1px;
 }
 
 .card {

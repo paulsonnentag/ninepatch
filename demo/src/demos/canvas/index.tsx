@@ -1,5 +1,7 @@
-import { frame, moduleUrl, seed } from "../../boot";
+import type { AnyDocumentId } from "@automerge/automerge-repo";
+import { frame, moduleUrl, repo, seed, seedCanvasItems } from "../../boot";
 import { createComponent, Section } from "../../harness";
+import type { CanvasDoc } from "../../types";
 import canvasSource from "./canvas.tsx?raw";
 import placeSource from "./place.tsx?raw";
 import mapSource from "./map.tsx?raw";
@@ -10,6 +12,7 @@ export function CanvasDemo() {
     <Section
       title="Canvas and map"
       chain={[frame, root]}
+      reset={reset}
       sources={[
         { name: "canvas.tsx", code: canvasSource },
         { name: "place.tsx", code: placeSource },
@@ -29,6 +32,15 @@ export function CanvasDemo() {
       <Canvas dir={root} document={seed.canvas} />
     </Section>
   );
+}
+
+async function reset() {
+  const doc = await repo.find<CanvasDoc>(seed.canvas as AnyDocumentId);
+  const items = seedCanvasItems(); // fresh place docs, same set
+  doc.change((d) => {
+    for (const id of Object.keys(d.items)) delete d.items[id];
+    Object.assign(d.items, items);
+  });
 }
 
 const root = frame.fork("root"); // "root" loosely: this demo's world

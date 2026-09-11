@@ -1,5 +1,7 @@
-import { frame, moduleUrl, seed } from "../../boot";
+import type { AnyDocumentId } from "@automerge/automerge-repo";
+import { frame, moduleUrl, repo, seed, seedTodoItems } from "../../boot";
 import { createComponent, Section } from "../../harness";
+import type { TodoDoc } from "../../types";
 import todosSource from "./todos.tsx?raw";
 
 export function TodosDemo() {
@@ -7,6 +9,7 @@ export function TodosDemo() {
     <Section
       title="Todos"
       chain={[frame, todos]}
+      reset={reset}
       sources={[{ name: "todos.tsx", code: todosSource }]}
       prose={
         <p>
@@ -18,6 +21,14 @@ export function TodosDemo() {
       <Todos dir={todos} document={seed.todos} />
     </Section>
   );
+}
+
+async function reset() {
+  const doc = await repo.find<TodoDoc>(seed.todos as AnyDocumentId);
+  doc.change((d) => {
+    d.items.splice(0, d.items.length);
+    d.items.push(...seedTodoItems());
+  });
 }
 
 const todos = frame.fork("todos");

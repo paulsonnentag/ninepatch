@@ -3,8 +3,6 @@ export type ContactDoc = { name: string; color: string };
 export type ChatDoc = {
   messages: { author: string; color: string; text: string; at: number }[];
 };
-/** An item on the canvas: which module renders it, which document it
- * edits, and where it sits. The canvas knows nothing else. */
 export type CanvasItem = {
   componentUrl: string;
   docUrl?: string; // mounted into the item's fork as `document`
@@ -16,6 +14,29 @@ export type PlaceDoc = { title: string; lat?: number; lng?: number };
 export type Place = { id: string; title: string; lat: number; lng: number };
 export type MarkdownDoc = { content: string };
 export type Folder = Record<string, string>;
+
+export type Cell = {
+  ch: string;
+  fg?: string;
+  bg?: string;
+  bold?: boolean;
+  inverse?: boolean;
+};
+export type Screen = {
+  cols: number;
+  rows: number;
+  cells: Cell[]; // row-major, cols * rows of them
+  cursor: { row: number; col: number } | null;
+};
+export type Size = { cols: number; rows: number };
+export type Key = {
+  seq: number;
+  key: string; // KeyboardEvent.key
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+};
 
 export type Seed = {
   url: string;

@@ -52,8 +52,7 @@ const root = createDirectory({
     }>),
 });
 
-/** The process table — the root's alone. The page keeps the root here and
- * hands out `frame`; only the harness's data panel reads this. */
+// the root's process table; only the harness's data panel reads this
 export const processes = root.processes;
 
 // The repo, as a server — verbatim from the spec. Filters by protocol,
@@ -88,26 +87,7 @@ async function findOrCreateSeed(): Promise<Seed> {
     const chat = repo.create<ChatDoc>({ messages: [] });
     // Every place is its own document; the canvas doc only stores which
     // component renders each item, which document it edits, and where.
-    const canvas = repo.create<CanvasDoc>({
-      items: {
-        berlin: placeItem(
-          repo.create<PlaceDoc>({ title: "Berlin", lat: 52.5, lng: 13.4 }).url,
-          24,
-          20
-        ),
-        tokyo: placeItem(
-          repo.create<PlaceDoc>({ title: "Tokyo", lat: 35.7, lng: 139.7 }).url,
-          56,
-          130
-        ),
-        somewhere: placeItem(
-          repo.create<PlaceDoc>({ title: "Somewhere" }).url,
-          96,
-          240
-        ),
-        map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
-      },
-    });
+    const canvas = repo.create<CanvasDoc>({ items: seedCanvasItems() });
     const notes2 = repo.create<MarkdownDoc>({ content: "" });
     const notes = repo.create<MarkdownDoc>({
       content: `# Notes\n\nType here. Open the page in a second tab and type there too.\n\nMore in [the second document](/${notes2.url}).\n`,
@@ -129,9 +109,7 @@ async function findOrCreateSeed(): Promise<Seed> {
   const folder = await repo.find<Folder>(url as AnyDocumentId);
   if (!folder.doc().todos) {
     // seeded before the todos section existed
-    const todos = repo.create<TodoDoc>({
-      items: [{ text: "open this page in a second tab", done: false }],
-    });
+    const todos = repo.create<TodoDoc>({ items: seedTodoItems() });
     folder.change((d) => (d.todos = todos.url));
   }
   const docs = folder.doc();
@@ -195,6 +173,34 @@ async function findOrCreateSeed(): Promise<Seed> {
     notes2: docs.notes2,
     alice: docs.alice,
     bob: docs.bob,
+  };
+}
+
+// Every place is its own document; the canvas doc only stores which
+// component renders each item, which document it edits, and where.
+// The canvas demo's reset builds the same set.
+export function seedTodoItems(): TodoDoc["items"] {
+  return [{ text: "open this page in a second tab", done: false }];
+}
+
+export function seedCanvasItems(): Record<string, CanvasItem> {
+  return {
+    berlin: placeItem(
+      repo.create<PlaceDoc>({ title: "Berlin", lat: 52.5, lng: 13.4 }).url,
+      24,
+      20
+    ),
+    tokyo: placeItem(
+      repo.create<PlaceDoc>({ title: "Tokyo", lat: 35.7, lng: 139.7 }).url,
+      56,
+      130
+    ),
+    somewhere: placeItem(
+      repo.create<PlaceDoc>({ title: "Somewhere" }).url,
+      96,
+      240
+    ),
+    map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
   };
 }
 

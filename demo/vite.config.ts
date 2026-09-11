@@ -9,6 +9,7 @@ export default defineConfig({
     // Only the wasm carrier: pre-bundling would inline the .wasm import.
     // automerge-repo and the adapters pre-bundle normally (they have CJS
     // deps like eventemitter3 that need the interop).
-    exclude: ["@automerge/automerge"],
+    // maplibre-gl: pre-bundling 404s its worker chunk — no worker, no tiles.
+    exclude: ["@automerge/automerge", "maplibre-gl"],
   },
 });

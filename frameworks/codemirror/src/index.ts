@@ -1,7 +1,5 @@
-/** CodeMirror 6 ↔ Handle. Document → editor as a minimal prefix/suffix
- * replace (the cursor survives); editor → document through automerge's
- * `updateText`, which splices, so concurrent edits merge instead of
- * clobbering. */
+// document → editor as a minimal replace, editor → document through
+// automerge's updateText — so concurrent edits merge instead of clobbering
 
 import { Annotation, StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";

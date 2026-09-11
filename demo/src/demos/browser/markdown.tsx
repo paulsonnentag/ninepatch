@@ -38,9 +38,8 @@ export default async function Markdown(dir: Directory) {
 
 const LINK = /\[([^\]]*)\]\((\/automerge:[A-Za-z0-9]+)\)/g;
 
-/** The little link plugin: a markdown link to `/automerge:…` renders as
- * its underlined text; put the cursor inside and the raw source shows.
- * Clicking one navigates — the same rebind the bar causes. */
+// a markdown link to `/automerge:…` renders as its underlined text; the
+// raw source shows while the cursor is inside; a click navigates
 function docLinks(go: (path: string) => void) {
   return ViewPlugin.fromClass(
     class {
