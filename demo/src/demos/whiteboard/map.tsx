@@ -1,25 +1,33 @@
 import { Map as LibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { derive, wrap, type Directory } from "@ninepatch/core";
-import type { LocalPointer, MapShape, SurfaceDoc, Tool } from "../../types";
+import { For, from, onCleanup } from "solid-js";
+import { render } from "solid-js/web";
+import { derive, wrap, type Directory, type Opened } from "@ninepatch/core";
+import type {
+  LocalPointer,
+  MapPointer,
+  MapShape,
+  Selected,
+  Shape,
+} from "../../types";
 import { bounds } from "./geometry";
-import { surface } from "./surface";
+import { componentName } from "./tools";
 
-// A shape that is a surface: rio in a rio window. Its own record becomes
-// the surface its shapes sit on — the pointer of the surface below
-// translated into map units (pixels at the origin zoom, measured from the
-// origin), and the scale of a map unit on screen, which changes as the
-// map zooms — plus that surface as `parent`, so the chain leads back up.
-// All on the record, where the surface below reads them at shapes/<id>/…
-// and a pen finds its way down to draw here in map units. With a tool
-// selected the map holds still.
+// A shape that is a surface: rio in a rio window. It reads the pointer
+// and scale of the surface it sits on through `surface`, and makes its
+// own record a surface in turn: the pointer translated into map units
+// (pixels at the origin zoom, measured from the origin) and the scale of
+// a map unit on screen, which changes as the map zooms, mounted onto the
+// record — where the surface it sits on reads them at shapes/<id>/…, and
+// a pen finds its way down to draw here in map units. Its shapes are
+// placed on a layer that moves with the projection, each a fork with
+// this record as `surface`. With a pen selected the map holds still.
 export default async function MapSurface(dir: Directory) {
   const shape = await dir.open<MapShape>("document");
-  const parent = await dir.open<SurfaceDoc>("parent"); // the surface below, by a name I won't redefine
-  const outer = await dir.open<LocalPointer>("parent/pointer"); // in its units
-  const outerScale = await dir.open<number>("parent/scale");
+  const outer = await dir.open<LocalPointer>("surface/pointer"); // the surface I sit on, in its units
+  const outerScale = await dir.open<number>("surface/scale");
   const dom = await dir.open<HTMLElement>("dom");
-  const tool = await dir.open<Tool>("tool");
+  const selected = await dir.open<Selected>("selected");
 
   const { origin, outline } = shape.value;
   const box = bounds(outline);
@@ -58,32 +66,87 @@ export default async function MapSurface(dir: Directory) {
   map.on("move", place);
   place();
 
-  const unsubscribe = tool.subscribe((t) => {
-    if (t) map.dragPan.disable();
+  const unsubscribe = selected.subscribe((s) => {
+    if (s) map.dragPan.disable();
     else map.dragPan.enable();
-    frame.classList.toggle("drawing", !!t);
+    frame.classList.toggle("drawing", !!s);
   });
 
+  // this record as a surface
+  shape.mount(
+    "pointer",
+    derive<LocalPointer, MapPointer>(outer, (p) => {
+      if (!p) return null;
+      const { x, y } = shape.value; // where this shape sits on the surface I sit on
+      const fx = p.x - x - box.x; // in the frame's pixels
+      const fy = p.y - y - box.y;
+      const o = anchor();
+      const k = scale();
+      const { lng, lat } = map.unproject([fx, fy]);
+      return {
+        ...p,
+        x: (fx - o.x) / k,
+        y: (fy - o.y) / k,
+        lng: round(lng, 6),
+        lat: round(lat, 6),
+      };
+    })
+  );
+  shape.mount(
+    "scale",
+    derive(zoom, (k) => k * outerScale.value) // a map unit on screen: my zoom times the scale I sit on
+  );
+
+  const dispose = render(() => {
+    const state = from(shape, shape.value);
+    return (
+      <For each={Object.keys(state().shapes)}>
+        {(id) => {
+          const s = () => state().shapes[id] as Shape | undefined;
+          const wrapper = (
+            <div
+              class="shape"
+              style={{
+                transform: `translate(${s()?.x ?? 0}px, ${s()?.y ?? 0}px)`,
+              }}
+            />
+          ) as HTMLDivElement;
+
+          const child = dir.fork(id);
+          child.mount("dom", wrapper);
+          child.mount("surface", shape);
+          let own: Opened<Shape> | undefined;
+          (async () => {
+            own = await dir.open<Shape>(["document", "shapes", id]);
+            child.mount("document", own);
+            const url = own.value.componentUrl;
+            child
+              .spawn(componentName(url), url)
+              .terminated.catch((e: unknown) => {
+                if (!child.signal.aborted) wrapper.textContent = String(e);
+              });
+          })().catch((e: unknown) => {
+            if (!child.signal.aborted) wrapper.textContent = String(e);
+          });
+          onCleanup(() => {
+            child.close();
+            own?.close();
+          });
+          return wrapper;
+        }}
+      </For>
+    );
+  }, layer);
+
   dir.signal.addEventListener("abort", () => {
+    dispose();
     unsubscribe();
     map.remove();
     frame.remove();
   });
+}
 
-  // this record as a surface, for my shapes and for whoever reads the one below
-  shape.mount("parent", parent);
-  await surface(dir, shape, layer, {
-    pointer: derive<LocalPointer, LocalPointer>(outer, (p) => {
-      if (!p) return null;
-      const { x, y } = shape.value; // where this shape sits on the surface below
-      const o = anchor();
-      const k = scale();
-      return {
-        ...p,
-        x: (p.x - x - box.x - o.x) / k,
-        y: (p.y - y - box.y - o.y) / k,
-      };
-    }),
-    scale: derive(zoom, (k) => k * outerScale.value), // a map unit on screen: my zoom times the surface below's scale
-  });
+function round(n: number, places: number): number {
+  const k = 10 ** places;
+  return Math.round(n * k) / k;
 }

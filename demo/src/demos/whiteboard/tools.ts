@@ -1,8 +1,14 @@
 import type { Directory, Opened } from "@ninepatch/core";
-import type { LocalPointer, SurfaceDoc } from "../../types";
+import type { LocalPointer, Shape, SurfaceDoc } from "../../types";
 import { within } from "./geometry";
 
 export const line = "./demos/whiteboard/line.tsx";
+
+// the same shape: what it is and where it sits — a record's identity on
+// its surface, which survives the document changing under it
+export function same(a: Shape | null | undefined, b: Shape): boolean {
+  return !!a && a.componentUrl === b.componentUrl && a.x === b.x && a.y === b.y;
+}
 
 // a surface, opened: its record, and on it the pointer in its units and
 // how many screen pixels a unit is
@@ -51,4 +57,13 @@ export async function surfaceUnder(
 
 export function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// "./demos/whiteboard/line.tsx" → "Line"
+export function componentName(url: string): string {
+  const base = url
+    .split("/")
+    .pop()!
+    .replace(/\.tsx?$/, "");
+  return base[0].toUpperCase() + base.slice(1);
 }

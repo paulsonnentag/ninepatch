@@ -1,24 +1,24 @@
 import { from } from "solid-js";
 import { render } from "solid-js/web";
 import type { Directory } from "@ninepatch/core";
-import type { LocalPointer, Stroke, Tool } from "../../types";
+import type { LocalPointer, Selected, Stroke } from "../../types";
 import { bounds } from "./geometry";
-import { line, round, surfaceUnder, type Target } from "./tools";
+import { line, round, same, surfaceUnder, type Target } from "./tools";
 
-// A pen is a shape that draws. Clicking it makes it the `tool` — one name
-// at the top, so the other pens let go and the map holds still. While it
-// is the tool and the pointer is down, it finds the surface under the
-// pointer — its `parent`, or a surface on it, however deep — and writes a
-// line into that surface's document, in that surface's units: the width
-// divided by the surface's scale, so the line is the pen's width on
-// screen as it is drawn, however far in the map is zoomed.
+// A pen is a shape that draws. Clicking it puts its record in `selected`
+// — one name at the top, so the other pens let go and the map holds
+// still. While selected and the pointer is down, it finds the surface
+// under the pointer — the `surface` it sits on, or a surface on that,
+// however deep — and writes a line into that surface's document, in that
+// surface's units: the width divided by the surface's scale, so the line
+// is the pen's width on screen as it is drawn, however far in the map is
+// zoomed.
 export default async function Pen(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<Stroke>("document");
-  const id = (await dir.open<string>("id")).value;
-  const tool = await dir.open<Tool>("tool");
-  const pointer = await dir.open<LocalPointer>("parent/pointer");
-  const active = () => tool.value === id;
+  const selected = await dir.open<Selected>("selected");
+  const pointer = await dir.open<LocalPointer>("surface/pointer");
+  const active = () => same(selected.value, doc.value);
 
   let stroke: (Target & { id: string; x: number; y: number }) | undefined;
   let seeking = false;
@@ -39,7 +39,7 @@ export default async function Pen(dir: Directory) {
     }
     if (seeking) return;
     seeking = true;
-    const target = await surfaceUnder(dir, ["parent"], p);
+    const target = await surfaceUnder(dir, ["surface"], p);
     seeking = false;
     const q = target.pointer.value;
     if (dir.signal.aborted || !active() || !q?.down) return target.close();
@@ -52,19 +52,19 @@ export default async function Pen(dir: Directory) {
       color,
       width: round(width / target.scale.value),
     };
-    const sid = crypto.randomUUID();
-    target.doc.change((d) => (d.shapes[sid] = fresh));
-    stroke = { ...target, id: sid, x: q.x, y: q.y };
+    const id = crypto.randomUUID();
+    target.doc.change((d) => (d.shapes[id] = fresh));
+    stroke = { ...target, id, x: q.x, y: q.y };
   });
 
   const dispose = render(() => {
     const pen = from(doc, doc.value);
-    const selected = from(tool, tool.value);
+    const chosen = from(selected, selected.value);
     const box = () => bounds(pen()?.outline ?? []);
     return (
       <button
         class="pen"
-        classList={{ active: selected() === id }}
+        classList={{ active: same(chosen(), doc.value) }}
         style={{
           left: `${box().x}px`,
           top: `${box().y}px`,
@@ -74,7 +74,7 @@ export default async function Pen(dir: Directory) {
         }}
         title={`${pen()?.width}px`}
         on:pointerdown={(e) => e.stopPropagation()} // a press on a tool is not a press on the surface
-        onClick={() => tool.set(active() ? null : id)}
+        onClick={() => selected.set(active() ? null : doc.value)}
       >
         <span
           class="tip"

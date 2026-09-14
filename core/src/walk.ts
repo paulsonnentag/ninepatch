@@ -22,7 +22,9 @@ export type Bound = { dir: ChainNode; rest: string[] };
 // crossed; `base` is where links restart — the last bind entered, else the
 // requester; `entered` is every bind crossed, in order; `crossed` every
 // handle read on the way; `owner` is whose own entry the handle is, at
-// `ownerPath` in its overlay — neither for a field stepped into in a value
+// `ownerPath` in its overlay — neither for a field stepped into in a
+// value; `linkOwner` is whose entry held the last link crossed — the
+// directory a mount past that link belongs to
 export type WalkResult =
   | {
       kind: "found";
@@ -35,6 +37,7 @@ export type WalkResult =
       bound: Bound | undefined;
       base: ChainNode;
       last: "link" | "bind" | undefined;
+      linkOwner: ChainNode | undefined;
     }
   | {
       kind: "miss";
@@ -44,6 +47,7 @@ export type WalkResult =
       bound: Bound | undefined;
       base: ChainNode;
       last: "link" | "bind" | undefined;
+      linkOwner: ChainNode | undefined;
     };
 
 const HOP_LIMIT = 32;
@@ -66,6 +70,8 @@ export function walk(
   let bound: Bound | undefined;
   let base = start;
   let last: "link" | "bind" | undefined;
+  let linkOwner: ChainNode | undefined;
+  let anchor: ChainNode | undefined; // whose entry the current hit came through
   let at = rel; // as the requester wrote it
   let cur = rel; // in `start`'s coordinates
   let hit: Hit | undefined;
@@ -77,6 +83,7 @@ export function walk(
     bound,
     base,
     last,
+    linkOwner,
   });
   let hops = 0;
   const hop = () => {
@@ -87,6 +94,7 @@ export function walk(
     if (!hit) {
       const found = locate(start, cur, origin);
       if (found.handle) {
+        anchor = found.owner;
         hit = {
           handle: found.handle,
           rest: [],
@@ -108,6 +116,7 @@ export function walk(
               bound,
               base,
               last,
+              linkOwner,
             };
           return miss();
         }
@@ -115,6 +124,7 @@ export function walk(
           hop();
           crossed.push(next.handle);
           last = "link";
+          linkOwner = next.owner;
           start = base;
           at = cur = next.to;
           continue;
@@ -128,6 +138,7 @@ export function walk(
           cur = next.rest;
           continue;
         }
+        anchor = next.owner;
         hit = { handle: next.handle, rest: next.rest };
       }
     }
@@ -140,6 +151,7 @@ export function walk(
         hop();
         crossed.push(hit.handle);
         last = "link";
+        linkOwner = anchor; // a URL in a field belongs to whoever holds the entry it was read through
         start = base;
         at = cur = [...link, ...hit.rest];
         hit = undefined;
@@ -169,6 +181,7 @@ export function walk(
         bound,
         base,
         last,
+        linkOwner,
       };
     // step into the value by one key
     const [key, ...more] = hit.rest;
@@ -179,8 +192,9 @@ export function walk(
 }
 
 // where `mount`/`unmount` of `rel` land: the overlay to write and the path
-// in it — a bind's own at the remaining path, the URL area where a link
-// was crossed, else the requester's at `rel`
+// in it — a bind's own at the remaining path; past a link, the URL area
+// of the directory whose entry the link is, so everything reaching the
+// document through that link sees the mount; else the requester's at `rel`
 export function canonical(
   start: ChainNode,
   rel: string[]
@@ -199,7 +213,10 @@ export function canonical(
           `cannot mount across a link that is not loaded: ${rel.join("/")} — open it first`
         );
     }
-    return { dir: result.base, names: [...result.at, name] };
+    return {
+      dir: result.linkOwner ?? result.base,
+      names: [...result.at, name],
+    };
   }
   return { dir: start, names: rel };
 }
@@ -220,7 +237,7 @@ export function names(start: ChainNode, rel: string[]): string[] {
     if (result.last === "bind" && result.bound)
       collectNames(result.bound.dir, result.bound.rest, out, hidden);
     else if (result.last === "link")
-      collectNames(result.base, result.at, out, hidden);
+      collectNames(result.linkOwner ?? result.base, result.at, out, hidden);
     if (result.kind === "found" && result.handle) {
       let value: unknown;
       try {
@@ -294,9 +311,19 @@ function locateChain(start: ChainNode, rel: string[]): Located {
 }
 
 type Hop =
-  | { kind: "link"; to: string[]; handle: Handle<unknown> }
+  | {
+      kind: "link";
+      to: string[];
+      handle: Handle<unknown>;
+      owner: ChainNode | undefined;
+    }
   | { kind: "bind"; bind: ChainNode; rest: string[] }
-  | { kind: "value"; handle: Handle<unknown>; rest: string[] };
+  | {
+      kind: "value";
+      handle: Handle<unknown>;
+      rest: string[];
+      owner: ChainNode | undefined;
+    };
 
 // the longest prefix holding anything, searched here then climbing: a
 // link or an open bind to follow, or a value to step into
@@ -319,10 +346,16 @@ function followable(
             kind: "link",
             to: [...link, ...rest],
             handle: prefix.handle,
+            owner: prefix.owner,
           };
         const bind = bindTarget(prefix.handle);
         if (bind) return { kind: "bind", bind, rest };
-        return { kind: "value", handle: prefix.handle, rest };
+        return {
+          kind: "value",
+          handle: prefix.handle,
+          rest,
+          owner: prefix.owner,
+        };
       }
     }
     if (isUrlRooted(p)) return undefined;

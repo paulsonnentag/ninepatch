@@ -33,12 +33,16 @@ export type MapShape = Shape &
     origin: { lng: number; lat: number; zoom: number }; // local units: pixels at this zoom, from this point
   };
 export type LocalPointer = { x: number; y: number; down: boolean } | null; // in the units of whoever mounted it
+// the map's pointer: map units, and where on earth that is
+export type MapPointer =
+  (NonNullable<LocalPointer> & { lng: number; lat: number }) | null;
 // what a surface is, to the shapes on it and the tools above: its record's
 // shapes, and on the record the pointer in its units and how many screen
 // pixels one of those units is
 export type Surface = { pointer: LocalPointer; scale: number };
-// the id of the selected tool shape — one for the whole board; the tool itself does the drawing
-export type Tool = string | null;
+// the selected shape, whole — one for the board; a pen is selected when
+// this is its record, and does the drawing itself
+export type Selected = Shape | null;
 
 export type Cell = {
   ch: string;

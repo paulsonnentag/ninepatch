@@ -50,9 +50,9 @@ export type Directory = {
   resolve(path?: Path): Handle<Resolution | undefined>;
 
   /** Where the path resolves: a Handle as-is, a Directory as a bind,
-   * anything else wrapped. Past a link the mount is keyed by the URL;
-   * past a bind it lands in the bound directory — and is taken back when
-   * this directory closes. */
+   * anything else wrapped. Past a link the mount is keyed by the URL in
+   * the directory that holds the link; past a bind it lands in the bound
+   * directory — either way taken back when this directory closes. */
   mount(path: Path, what: unknown): void;
   /** Remove and cut fall-through there, for this directory and below. */
   unmount(path: Path): void;

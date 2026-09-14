@@ -58,25 +58,33 @@ goes:
 - Nothing, or a plain value: `foo/bar` goes in your own entries. `mount
   ("foo/bar", a)` and `mount("foo/baz", b)` give you one name, `foo`, with
   `bar` and `baz` below it.
-- A link — a name holding a URL: the mount is keyed by the URL. `mount
-  ("foo/bar", "automerge:a")`, `mount("lol", "automerge:a")`, then `mount
-  ("foo/bar/baz", b)` records `automerge:a/baz` in your entries, and both
-  `foo/bar/baz` and `lol/baz` read `b`. The mount is on the document, as
-  you see it; it stays with the document if `foo/bar` is later pointed
-  elsewhere, and nothing above you or beside you sees it.
+- A link — a name holding a URL: the mount is keyed by the URL, in the
+  entries of the directory that *holds the link*. `mount("foo/bar",
+  "automerge:a")`, `mount("lol", "automerge:a")`, then `mount("foo/bar/baz",
+  b)` records `automerge:a/baz` in your entries, and both `foo/bar/baz` and
+  `lol/baz` read `b`. A fork of you doing the same `mount("foo/bar/baz",
+  b)` records it in *your* entries too, since `foo/bar` is yours: the
+  mount is on the document as reached through that link, for everyone who
+  reaches it that way — you, your forks, your views — and for nobody who
+  reaches the same URL through a link of their own. It stays with the
+  document if `foo/bar` is later pointed elsewhere.
 - A bind — a name holding a directory: the mount lands in *that*
   directory, at the rest of the path, and everyone reading through it sees
-  it. What you put there is taken back when you close.
+  it.
+
+Either way, what you put past a link or a bind is taken back when you
+close.
 
 A directory you opened is a directory at a path, and mounting into it is
 mounting at that path: `open("surface")` where `surface` is a bind gives
 you a directory that writes into the bound one; `open("document")` where
-`document` is a link gives you a directory whose mounts are keyed by the
-document's URL — yours alone, so two opens of the same document are two
-places to mount things, and a component placed twice doesn't collide with
+`document` is a link gives you a directory whose mounts land next to the
+link, keyed by the URL, for the lifetime of the view. Two directories
+each holding their own link to one document are two places to mount
+things, so a component placed twice under two links doesn't collide with
 itself. Plan 9 keys its mount table by the channel mounted on, so `bind X
 /b/c` after `bind /a /b` shows up at `/a/c` too; this is the same idea,
-with the table kept per directory rather than per process group.
+with the table kept per link rather than per process group.
 
 A mount over a document field shadows it for anyone reading through you.
 An `unmount` is a *cut*: the name is gone for you and below, whatever the
@@ -378,10 +386,12 @@ inside `parent`, `[]` for a fork, the URL for a document. Reading `rel`:
 
 `mount(rel, x)` and `unmount(rel)` resolve all of `rel` but its last name
 the same way, then write the last name where that landed: after a link,
-`url/…/name` in the requester's own entries (or the base's, if a bind came
-first); after a bind, `rest/name` in the bound directory; otherwise `rel`
-in the requester's own entries. Resolving a prefix across a link into a
-document that isn't loaded throws — open it first.
+`url/…/name` in the own entries of the directory whose entry the link is
+(for a URL read out of a document field, the directory whose entry that
+document was read through); after a bind, `rest/name` in the bound
+directory; otherwise `rel` in the requester's own entries. Resolving a
+prefix across a link into a document that isn't loaded throws — open it
+first.
 
 `NotFound.target` is the missing path as the requester wrote it. Nothing
 in this needs an absolute path, and there is none.
@@ -433,9 +443,11 @@ in this needs an absolute path, and there is none.
     server.
 11. **A mount lands where its path resolves.** All but the last name are
     resolved like a read; the last is written where that landed. Past a
-    link the mount is keyed by the URL in the mounting directory's
-    entries, so every name that reaches the document through it sees the
-    mount — and nothing above or beside it does. Past a bind the mount is
+    link the mount is keyed by the URL in the entries of the directory
+    that holds the link, so everything that reaches the document through
+    that link — that directory, its forks, its views, whatever is bound
+    to them — sees the mount, and nothing reaching the same URL through
+    another link does. Past a bind the mount is
     in the bound directory, at the remaining path, for everyone who reads
     through it. Otherwise it is the path as written, in own entries.
     Mounting into an opened directory is mounting at its path, by the
@@ -604,26 +616,28 @@ places.fork("Map").spawn("Map", import.meta.resolve("./map.tsx"))       // opens
 ### A surface: rio, one level at a time
 
 The root has a `pointer` — a recorder writes it, in the board's pixels
-— and nothing else. Below it, the canvas is a component that makes its
-document a *surface*: a purely logical thing — the shapes in the record,
-and mounted onto the record the `pointer` in the surface's units and the
-`scale` of one of those units on screen — bound as `surface`. Nothing
-visual is on it; where the shapes are drawn is the component's business.
-Every shape in it is placed as a component of its own — a fork with the
-wrapper as `dom`, the record as `document`, and the surface as `parent`.
-The map is one of those shapes and a surface in turn: it mounts the
-pointer in map units, its zoom (times the scale below) as `scale`, and
-its `parent` onto its own record, and binds that as `surface` for the
-lines below it. From a shape on the map `parent` is the map, and the
-map's `parent` is the canvas: the chain leads back up, level by level. A
-surface draws nothing. The tools are shapes, and they do the drawing:
-clicking a pen sets `tool`, one name at the top, so the other pens let
-go and the map holds still; while the pointer is down the pen follows
-`parent` *down* — a shape under the pointer that publishes a `pointer`
-of its own is a surface, and its pointer is already in its units — and
-writes a line into the deepest surface's document, its width divided by
-that surface's scale, so the ink is the pen's width on screen as it is
-drawn, however far in the map is zoomed.
+— and nothing else. Below it, the canvas is a component whose document
+is a *surface*: a purely logical thing — the shapes in the record, and
+mounted onto the record the `pointer` in the surface's units and the
+`scale` of one of those units on screen. Nothing visual is on it; where
+the shapes are drawn is the component's business. Every shape in it is
+placed as a component of its own: a fork with the wrapper as `dom`, the
+record as `document`, and the surface it sits on as `surface`. Nothing
+else — not its id, not a parent; a shape knows what it is and what it
+sits on. The map is one of those shapes and a surface in turn: it reads
+the pointer and scale of the surface it sits on through `surface`,
+mounts the pointer in map units and its zoom (times that scale) onto its
+own record, and places its shapes with that record as their `surface`.
+Level by level, `surface` is the one above; nothing is shadowed, so
+nothing forks but the shapes. A surface draws nothing. The tools are
+shapes, and they do the drawing: clicking a pen puts its record in
+`selected`, one name at the top, so the other pens let go and the map
+holds still; while the pointer is down the pen follows `surface` *down*
+— a shape under the pointer that publishes a `pointer` of its own is a
+surface, and its pointer is already in its units — and writes a line
+into the deepest surface's document, its width divided by that surface's
+scale, so the ink is the pen's width on screen as it is drawn, however
+far in the map is zoomed.
 
 ```ts
 // the host: a pointer, and below it a canvas
@@ -632,28 +646,20 @@ root.mount("dom", board)
 await root.spawn("Input", "./input.ts").terminated       // mounts `pointer`: x, y, down, in the board's pixels
 const canvas = root.fork("canvas")
 canvas.mount("document", seed.whiteboard)                // a link: the canvas document
-canvas.mount("tool", null)                               // the selected pen's id, for every tool and surface below
+canvas.mount("selected", null)                           // the selected shape — a pen — for every tool and surface below
 canvas.spawn("Canvas", "./canvas.tsx")
 
 // canvas.tsx — a flat surface, in its own pixels: a unit is a pixel
 export default async function Canvas(dir: Directory) {
   const doc = await dir.open<SurfaceDoc>("document")
   const dom = await dir.open<HTMLElement>("dom")
-  const pointer = await dir.open<LocalPointer>("pointer")
-  await surface(dir, doc, dom.value, { pointer, scale: 1 })
-}
-
-// surface.tsx — what makes a component a surface: the two names, the bind, the placing
-export async function surface(dir, doc, layer, self: { pointer, scale }) {
-  doc.mount("pointer", self.pointer)                     // onto the record: the surface is the document, as a directory
-  doc.mount("scale", self.scale)
-  dir.mount("surface", doc)
+  doc.mount("pointer", await dir.open<LocalPointer>("pointer"))   // onto the record: the document is the surface
+  doc.mount("scale", 1)
   for (const id of Object.keys(doc.value.shapes)) {
     const child = dir.fork(id)
-    child.mount("dom", layer.appendChild(wrapperAt(doc.value.shapes[id])))
-    child.mount("id", id)
-    child.mount("parent", doc)
-    const own = await dir.open<Shape>(["surface", "shapes", id])   // through the bind: the record, on the surface
+    child.mount("dom", dom.value.appendChild(wrapperAt(doc.value.shapes[id])))
+    child.mount("surface", doc)                          // what the shape sits on
+    const own = await dir.open<Shape>(["document", "shapes", id])  // the record, on the surface — a path through a name nobody below redefines
     child.mount("document", own)
     child.spawn(name(own.value.componentUrl), own.value.componentUrl)
   }
@@ -662,28 +668,32 @@ export async function surface(dir, doc, layer, self: { pointer, scale }) {
 // map.tsx — a shape that is a surface, in map units
 export default async function MapSurface(dir: Directory) {
   const shape = await dir.open<MapShape>("document")
-  const outer = await dir.open<LocalPointer>("parent/pointer")   // the surface below's pointer, in its units
-  const outerScale = await dir.open<number>("parent/scale")
+  const outer = await dir.open<LocalPointer>("surface/pointer")  // the surface I sit on, in its units
+  const outerScale = await dir.open<number>("surface/scale")
   const layer = …                                          // inside dir.open("dom"), transformed with the projection
   const zoom = wrap(1); map.on("move", () => zoom.set(2 ** (map.getZoom() - origin.zoom)))
-  shape.mount("parent", await dir.open("parent"))          // onto my record — the canvas sees it at surface/shapes/map/parent
-  await surface(dir, shape, layer, {
-    pointer: derive(outer, (p) => p && toMapUnits(minus(p, shape.value))),
-    scale: derive(zoom, (k) => k * outerScale.value),      // a map unit on screen
-  })
+  shape.mount("pointer", derive(outer, (p) => p && toMapUnits(minus(p, shape.value))))
+  shape.mount("scale", derive(zoom, (k) => k * outerScale.value))   // a map unit on screen
+  for (const id of Object.keys(shape.value.shapes)) {     // the same placing, into the layer, with me as `surface`
+    const child = dir.fork(id)
+    child.mount("dom", layer.appendChild(wrapperAt(shape.value.shapes[id])))
+    child.mount("surface", shape)
+    child.mount("document", await dir.open<Shape>(["document", "shapes", id]))
+    child.spawn(…)
+  }
 }
 
 // pen.tsx — a shape that draws, on whatever surface is under the pointer
 export default async function Pen(dir: Directory) {
   const doc = await dir.open<Stroke>("document")
-  const id = (await dir.open<string>("id")).value
-  const tool = await dir.open<Tool>("tool")
-  const pointer = await dir.open<LocalPointer>("parent/pointer")
-  button.onclick = () => tool.set(tool.value === id ? null : id)
+  const selected = await dir.open<Selected>("selected")
+  const pointer = await dir.open<LocalPointer>("surface/pointer")
+  const active = () => same(selected.value, doc.value)   // the selected shape is me
+  button.onclick = () => selected.set(active() ? null : doc.value)
   pointer.subscribe(async (p) => {
-    if (tool.value !== id || !p?.down) return lift()
+    if (!active() || !p?.down) return lift()
     if (stroke) return extend(stroke)                      // more points, read from the target's own pointer
-    const target = await surfaceUnder(dir, ["parent"], p)  // the deepest surface under p: its doc, pointer and scale
+    const target = await surfaceUnder(dir, ["surface"], p) // the deepest surface under p: its doc, pointer and scale
     stroke = begin(target, { ...doc.value, width: doc.value.width / target.scale.value })
   })
 }
@@ -710,23 +720,22 @@ Why the record and not a `wrap`ped value: a mount lands where its path
 resolves, and a path into a plain value stops at the value — there is
 no table there to land in. A document is a directory, so `pointer`
 mounted onto the map's record through `document` resolves through the
-child's `surface` bind to the canvas's document and lands in its URL
-area at `shapes/map/pointer`, where the canvas, the pen, the host and
-the inspector all read it. That is also why the child's `document` is
-opened through `surface`, not from the surface's own `doc` view: the two
-spell different paths to the same record, and only the one through the
-bind canonicalises to the shared table. And it is why the pen needs no
-knowledge of maps: a surface is anything with `shapes`, a `pointer` and
-a `scale`, found by listing.
+map's `document` bind to the canvas's `document` link and lands next to
+that link, in the canvas directory's entries, at `automerge:…/shapes/map/
+pointer` — where the canvas, the pen (through its `surface` bind to the
+canvas's view), the host and the inspector all read it, whichever view
+they came through. That is also why the pen needs no knowledge of maps:
+a surface is anything with `shapes`, a `pointer` and a `scale`, found by
+listing.
 
 From the host:
 
 ```ts
 root.list().value                                                 // ["dom", "pointer"]
-canvas.list().value                                               // ["dom", "pointer", "document", "tool", "surface"]
-canvas.list("surface").value                                      // ["shapes", "pointer", "scale"]
-canvas.list(["surface", "shapes", "map"]).value                   // ["componentUrl", "x", "y", …, "parent", "pointer", "scale"]
-(await canvas.open<LocalPointer>("surface/shapes/map/pointer")).value   // the pointer, in map units
+canvas.list().value                                               // ["dom", "pointer", "document", "selected"]
+canvas.list("document").value                                     // ["shapes", "pointer", "scale"]
+canvas.list(["document", "shapes", "map"]).value                  // ["componentUrl", "x", "y", …, "pointer", "scale"]
+(await canvas.open<LocalPointer>("document/shapes/map/pointer")).value  // the pointer, in map units — and lng, lat
 ```
 
 Two maps on the board are two ids, two forks, two records, two
