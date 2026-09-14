@@ -2,6 +2,7 @@ import { TodosDemo } from "./demos/todos";
 import { TerminalDemo } from "./demos/terminal";
 import { ChatDemo } from "./demos/chat";
 import { CanvasDemo } from "./demos/canvas";
+import { WhiteboardDemo } from "./demos/whiteboard";
 import { BrowserDemo } from "./demos/browser";
 
 export function Page() {
@@ -22,6 +23,7 @@ export function Page() {
       <TerminalDemo />
       <ChatDemo />
       <CanvasDemo />
+      <WhiteboardDemo />
       <BrowserDemo />
     </>
   );

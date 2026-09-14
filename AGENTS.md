@@ -39,3 +39,9 @@ child.mount("document", field(doc, ["items", id, "docUrl"]));
 
 When an example needs reactivity or rendering, reach for Solid
 (`solid-js`) unless there's a specific reason to use something else.
+
+## Don't test — say when you're done
+
+Don't start dev servers, drive browsers, write scratch scripts, or take
+screenshots to verify changes. Run `pnpm typecheck` and the formatter,
+then tell the user you're done; they test in their own browser.

@@ -37,6 +37,15 @@ mount what it should see, hide what it shouldn't, hand it over. The
 component can't tell whether `document` was mounted just for it or inherited
 from the page, and it can't reach anything you didn't give it.
 
+A directory can itself be mounted: `mount("wsys/map", other)` is a *bind*.
+Reading `wsys/map/pointer` continues inside `other` — its own entries
+first, then its fall-through — and the same directory bound at two names
+is one object seen twice: mount into it and both names show the change.
+A bind has no value of its own; open below it. Writes follow reads:
+`mount` and `unmount` through a view whose path crosses a bind land in the
+bound directory, so what you put there is what everyone reading through
+the name sees.
+
 Underneath, a directory is exactly three things: its own entries, the
 directory it came from, and the path it was opened at inside that
 directory — `["document"]` for `open("document")`, `[]` for a fork.
@@ -57,8 +66,9 @@ the target (see Links are handles);
 contract Svelte defined, so a handle drops straight into Solid's `from()`
 or Svelte's `$store`. Mount a plain value — a DOM element, an object — and
 the directory wraps it in a handle for you. Mount something that already is
-a handle — an automerge document via `fromDoc`, a derivation via `derive`,
-another directory — and it is used as is, behavior included.
+a handle — an automerge document via `fromDoc`, a derivation via `derive` —
+and it is used as is, behavior included. Mount a directory and it is a
+bind: walks continue inside it (see Directories).
 
 A directory opened at a name that holds a value is both: `open<ChatDoc>
 ("document")` is a directory (open `document/messages` from it, mount
@@ -185,7 +195,9 @@ type Directory = {
   fork<Self>(this: Self, name?: string): Self
 
   /** Into the own entries, replacing what was there. A Handle is used
-   * as-is; anything else is wrapped. */
+   * as-is; a Directory is a bind — walks continue inside it, and it has
+   * no value of its own; anything else is wrapped. Through a view whose
+   * path crosses a bind, the mount lands in the bound directory. */
   mount(path: Path, what: unknown): void
   /** Remove, and cut fall-through at that node for this directory and
    * everything below it. Mounting over the cut is allowed. */
@@ -283,14 +295,19 @@ inside `parent`, `[]` for a fork, the URL for a document. Reading `rel`:
    going.
 2. Otherwise ask `parent` for `path + rel`. A URL-rooted `rel` is asked
    as is: a URL reads the same at every level.
-3. A handle whose value is a URL is a link: start again from the
+3. A handle that is a directory is a bind: continue inside it with the
+   rest of the path, as that directory reads it — own entries, then its
+   fall-through. The path stays the requester's; a closed directory reads
+   as nothing. More than 32 binds is an error.
+4. A handle whose value is a URL is a link: start again from the
    requester with the URL and the rest of the path. More than 32 links is
    an error.
-4. Nothing anywhere, and no entries below: a miss at `rel`. Ask the
+5. Nothing anywhere, and no entries below: a miss at `rel`. Ask the
    servers (rule 1), climbing the same way, each seeing the path grown to
    its own level. A fill lands in the requester's own entries, translated
    back down by stripping the same prefixes; a fill that doesn't start
-   with them is outside the requester's names and throws.
+   with them is outside the requester's names and throws — and at the
+   requester it shadows any bind the walk had entered there.
 
 `NotFound.target` is the missing path as the requester wrote it. Nothing
 in this needs an absolute path, and there is none.
@@ -331,7 +348,16 @@ in this needs an absolute path, and there is none.
 10. **Listing is own entries.** `entries` is what this directory put there,
     never what it inherits or what a read would find. `children` is what
     it opened or forked and hasn't closed. Neither asks a server.
-11. **A process shares its directory and owns its lifetime.** `spawn`
+11. **A mounted directory is a bind.** Walks go through it: reading below
+    the name continues inside the bound directory, which answers with its
+    own entries and its own fall-through. The same directory bound at two
+    names is one object seen twice. `mount` and `unmount` through a view
+    whose path crosses a bind land in the bound directory at the remaining
+    path; unmounting the bind's own name removes the binding (and cuts,
+    rule 6) and leaves the bound directory untouched. A bind has no value:
+    `value` at the name throws `NotFound`. A closed directory reads as
+    nothing.
+12. **A process shares its directory and owns its lifetime.** `spawn`
     imports the module at `url` and calls its default export with a
     directory that has the entries of the one it was spawned at — the same
     collection, not a copy — and an empty path; its opens and forks are its
@@ -532,6 +558,24 @@ preview.mount("automerge:x…", fromDoc(clone))
 Editor(preview)                    // opens automerge:x…/content, gets the clone's field
 ```
 
+### A bind
+
+A directory mounted under a name is a bind: the same object, seen from a
+second place. Reads walk through it, and writes through the name land in it.
+
+```ts
+const map = page.fork("map")
+map.mount("pointer", { x: 0, y: 0 })
+
+page.mount("wsys/map", map)                             // a bind, not a copy
+const p = await page.open<Pointer>("wsys/map/pointer")  // map's own entry
+map.mount("zoom", 3)                                    // appears at wsys/map/zoom, live
+
+const view = await page.open("wsys/map")                // no value of its own
+view.mount("selected", "shape-1")                       // lands in map: everyone reading through the bind sees it
+page.unmount("wsys/map")                                // drops the binding; map itself is untouched
+```
+
 ### Not found
 
 ```ts
@@ -580,6 +624,10 @@ const { loadComponent } = (await page.open<SolidPkg>("modules/solid")).value
 
 ## Deferred
 
+- Union binds: several directories bound at one name, read in order —
+  Plan 9's `MBEFORE`/`MAFTER`. A bind here replaces.
+- `..` — walking back out of a bind. There is no address to climb back
+  to, and binds only resolve down.
 - A merged listing: every name a directory can see, inherited ones included.
 - Read-only handles.
 - What a process writes: `children` says what it opened, not what it

@@ -13,7 +13,7 @@ import {
 } from "./handle";
 import { Overlay, type Entry } from "./overlay";
 import { isUrlRooted, parsePath, startsWith, type Path } from "./path";
-import { walk, type WalkResult } from "./walk";
+import { walk, type ChainNode, type WalkResult } from "./walk";
 
 export type { Entry };
 
@@ -35,7 +35,10 @@ export type Directory = {
   /** The same names at the empty path; writes stay in the fork. */
   fork<Self>(this: Self, name?: string): Self;
 
-  /** Into own entries, replacing. A Handle as-is; anything else wrapped. */
+  /** Into own entries, replacing. A Handle as-is; a Directory is a bind —
+   * walks continue inside it, and it has no value of its own; anything
+   * else wrapped. Through a view whose path crosses a bind, the mount
+   * lands in the bound directory. */
   mount(path: Path, what: unknown): void;
   /** Remove and cut fall-through there — permanently, for this and below. */
   unmount(path: Path): void;
@@ -181,12 +184,16 @@ export class DirectoryImpl {
   mount(path: Path, what: unknown): void {
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path");
+    const bound = this.boundAt();
+    if (bound) return bound.dir.mount([...bound.rest, ...rel], what);
     this.overlay.mount(rel, isHandle(what) ? what : wrap(what));
   }
 
   unmount(path: Path): void {
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path");
+    const bound = this.boundAt();
+    if (bound) return bound.dir.unmount([...bound.rest, ...rel]);
     this.overlay.unmount(rel);
   }
 
@@ -240,7 +247,10 @@ export class DirectoryImpl {
     this.changes.clear();
     this.kidsChanged.clear();
     this.tableChanged.clear();
-    if (this.ownsOverlay) this.overlay.mutated.clear();
+    if (this.ownsOverlay) {
+      this.overlay.mutated.emit(); // binders re-walk and see this gone
+      this.overlay.mutated.clear();
+    }
     this.servers.clear();
     if (this.parent?.kids.delete(this)) this.parent.kidsChanged.emit();
     const held = this.held;
@@ -327,8 +337,16 @@ export class DirectoryImpl {
     return importer(url);
   }
 
-  private get closed(): boolean {
+  get closed(): boolean {
     return this.controller.signal.aborted;
+  }
+
+  // a view whose path crosses a bind reads and writes the bound directory
+  private boundAt(): { dir: DirectoryImpl; rest: string[] } | undefined {
+    if (!this.parent || this.path.length === 0) return undefined;
+    const bound = walk(this.parent, this.path).bound;
+    if (!bound) return undefined;
+    return { dir: bound.dir as DirectoryImpl, rest: bound.rest };
   }
 
   private adopt(child: DirectoryImpl): DirectoryImpl {
@@ -518,8 +536,9 @@ class FromView {
   }
 }
 
-// live reads: re-walk when an overlay in the chain mutates or a crossed
-// handle fires; `changes` fires once the re-walk settles
+// live reads: re-walk when an overlay in the chain mutates — the walker's
+// own, or that of a bind the walk entered — or a crossed handle fires;
+// `changes` fires once the re-walk settles
 class Watch {
   private readonly unsubOverlays: (() => void)[] = [];
   private unsubHandles: (() => void)[] = [];
@@ -589,6 +608,18 @@ class Watch {
     for (const unsub of this.unsubHandles) unsub();
     this.unsubHandles = [];
     if (!result) return;
+    // the chains of entered binds; the own chain is subscribed for good
+    const seen = new Set<Overlay>();
+    for (let n: ChainNode | undefined = this.dir; n; n = n.parent)
+      seen.add(n.overlay);
+    for (const bind of result.entered)
+      for (let n: ChainNode | undefined = bind; n; n = n.parent)
+        if (!seen.has(n.overlay)) {
+          seen.add(n.overlay);
+          this.unsubHandles.push(
+            n.overlay.mutated.on(() => this.trigger(false))
+          );
+        }
     const handles = [...result.crossed];
     if (result.kind === "found" && result.handle) handles.push(result.handle);
     for (const handle of handles) {

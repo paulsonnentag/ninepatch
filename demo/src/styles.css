@@ -483,16 +483,8 @@ body.resizing {
   stroke-linecap: round;
 }
 
-.proc-lines circle {
-  fill: #c8c8cc;
-}
-
 .proc-lines .focused path {
   stroke: var(--accent);
-}
-
-.proc-lines .focused circle {
-  fill: var(--accent);
 }
 
 .window.folded .titlebar {
@@ -699,6 +691,28 @@ body.resizing {
 
 .tree-value code {
   font-size: 0.72rem;
+}
+
+/* the preview's folder view: an object's fields as directory-like rows */
+.folder-view {
+  font-size: 0.78rem;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.25rem 0.2rem calc(0.25rem + var(--depth, 0) * 0.9rem);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.folder-row.foldable {
+  cursor: default;
+}
+
+.folder-row:hover {
+  background: #f3f3f3;
 }
 
 /* icons: a folder, and a file marked by what it holds */
@@ -1265,6 +1279,57 @@ body.resizing {
 .map .pin.selected {
   background: var(--accent);
   transform: scale(1.25);
+}
+
+/* the whiteboard: a surface is a plane of shapes, each a 0×0 wrapper the
+   surface places, and the component draws around it */
+.whiteboard {
+  position: relative;
+  height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, #f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(#f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    white;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.shape {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+/* the map surface: maplibre in a frame, and above it the layer the inner
+   surface draws on — the frame's transform is the map's projection */
+.map-surface {
+  position: absolute;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef6fb;
+  cursor: grab;
+}
+
+.map-surface .map {
+  position: absolute;
+  inset: 0;
+}
+
+.map-surface .layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* the url example: a little browser — chrome bar with the url pill, the

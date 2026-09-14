@@ -15,6 +15,22 @@ export type Place = { id: string; title: string; lat: number; lng: number };
 export type MarkdownDoc = { content: string };
 export type Folder = Record<string, string>;
 
+// A surface is a document of shapes; every shape is a component placed at
+// x/y with an outline of points relative to that position, in the
+// surface's own units. Components narrow the shape they read.
+export type Shape = {
+  componentUrl: string;
+  x: number;
+  y: number;
+  outline: number[]; // flat [x0, y0, x1, y1, ...]
+};
+export type SurfaceShape = Shape & { docUrl: string }; // a shape that is itself a surface
+export type SurfaceDoc = { shapes: Record<string, Shape> };
+export type MapSurfaceDoc = SurfaceDoc & {
+  origin: { lng: number; lat: number; zoom: number }; // local units: pixels at this zoom, from this point
+};
+export type LocalPointer = { x: number; y: number } | null; // in the units of whoever mounted it
+
 export type Cell = {
   ch: string;
   fg?: string;
@@ -42,6 +58,7 @@ export type Seed = {
   todos: string;
   chat: string;
   canvas: string;
+  whiteboard: string;
   notes: string;
   notes2: string;
   alice: string;

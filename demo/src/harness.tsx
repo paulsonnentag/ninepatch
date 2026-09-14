@@ -682,7 +682,6 @@ function ProcLines() {
     const all = table().flatMap((p) =>
       linesFor(p, opened().get(p) ?? []).map((line) => ({
         d: line.d,
-        ends: line.ends,
         pid: p.pid,
         focused:
           p === proc ||
@@ -700,9 +699,6 @@ function ProcLines() {
         {(line) => (
           <g classList={{ focused: line.focused }}>
             <path d={line.d} />
-            <For each={line.ends}>
-              {(end) => <circle cx={end.x} cy={end.y} r="2.5" />}
-            </For>
           </g>
         )}
       </For>
@@ -712,7 +708,6 @@ function ProcLines() {
 
 type Line = {
   d: string;
-  ends: [Point, Point]; // a dot at each end
   name?: string;
   item?: Element;
 };
@@ -732,7 +727,7 @@ function linesFor(p: Process, names: string[]): Line[] {
     const c = box.getBoundingClientRect();
     const from = { x: w.right, y: w.top + 16 };
     const to = { x: c.left, y: c.top + 16 };
-    return [{ d: `M ${from.x} ${from.y} L ${to.x} ${to.y}`, ends: [from, to] }];
+    return [{ d: `M ${from.x} ${from.y} L ${to.x} ${to.y}` }];
   }
   const source = box?.querySelector(".cm-scroller");
   // the node: the open box, or the pill in the lane
@@ -741,8 +736,7 @@ function linesFor(p: Process, names: string[]): Line[] {
   const s = source?.getBoundingClientRect();
   const fromChip = { x: c.left, y: c.top + (box ? 16 : c.height / 2) };
   const trunk = (b.right + c.left) / 2; // down the lane beside the window
-  // a preview covers the rows' right side: only the selected entry's line,
-  // and it stops at the window's edge
+  // a preview covers the rows' right side: only the selected entry's line
   const selected = body.querySelector(".preview")
     ? body.querySelector(".tree-item.selected")?.getAttribute("data-path")
     : undefined;
@@ -760,11 +754,8 @@ function linesFor(p: Process, names: string[]): Line[] {
       l && s && l.bottom >= s.top && l.top <= s.bottom
         ? { x: s.left, y: l.top + l.height / 2 }
         : fromChip;
-    const end = {
-      x: selected !== undefined ? b.right : r.right - 6,
-      y: r.top + r.height / 2,
-    };
-    out.push({ d: hook(start, trunk, end), ends: [start, end], name, item });
+    const end = { x: b.right, y: r.top + r.height / 2 }; // stops at the window's edge
+    out.push({ d: hook(start, trunk, end), name, item });
   }
   return out;
 }
@@ -868,7 +859,12 @@ function Value(props: {
           when={isElement()}
           fallback={
             <Show when={props.editor} fallback={<Summary value={value()} />}>
-              <RawEditor handle={props.handle} />
+              <Show
+                when={isFolderValue(value())}
+                fallback={<RawEditor handle={props.handle} />}
+              >
+                <FolderView handle={props.handle} />
+              </Show>
             </Show>
           }
         >
@@ -916,7 +912,12 @@ function Linked(props: {
         return (
           <Show when={props.editor} fallback={<Summary value={value()} />}>
             <CopyUrl url={props.url} />
-            <RawEditor handle={target()} />
+            <Show
+              when={isFolderValue(value())}
+              fallback={<RawEditor handle={target()} />}
+            >
+              <FolderView handle={target()} />
+            </Show>
           </Show>
         );
       }}
@@ -972,6 +973,81 @@ function summarize(v: unknown): JSX.Element {
     return <code>{`{ ${shown}${more} }`}</code>;
   }
   return <code>{String(v)}</code>;
+}
+
+// --- the folder view ------------------------------------------------------------
+
+// an object in the preview: fields as rows like a directory listing,
+// objects nested and foldable — the json view is only for primitives
+function isFolderValue(v: unknown): boolean {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !(v instanceof Uint8Array) &&
+    !(v instanceof Element)
+  );
+}
+
+function FolderView(props: { handle: Handle<unknown> }) {
+  const value = from(props.handle, readValue(props.handle));
+  return (
+    <div class="folder-view">
+      <FolderRows value={value()} depth={0} />
+    </div>
+  );
+}
+
+function FolderRows(props: { value: unknown; depth: number }) {
+  const entries = () =>
+    !isFolderValue(props.value)
+      ? []
+      : Array.isArray(props.value)
+        ? props.value.map((v, i) => [String(i), v] as const)
+        : Object.entries(props.value as Record<string, unknown>);
+  return (
+    <For each={entries()}>
+      {([key, v]) => <FolderRow name={key} value={v} depth={props.depth} />}
+    </For>
+  );
+}
+
+function FolderRow(props: { name: string; value: unknown; depth: number }) {
+  const [open, setOpen] = createSignal(props.depth < 1);
+  const folder = () => isFolderValue(props.value);
+  return (
+    <>
+      <div
+        class="folder-row"
+        classList={{ foldable: folder() }}
+        style={{ "--depth": props.depth }}
+        onClick={() => folder() && setOpen(!open())}
+      >
+        <Show when={folder()} fallback={<FileIcon />}>
+          <FolderIcon open={open()} />
+        </Show>
+        <span class="tree-name">{props.name}</span>
+        <Show when={!(folder() && open())}>
+          <span class="tree-value">
+            <Summary value={props.value} />
+          </span>
+        </Show>
+      </div>
+      <Show when={folder() && open()}>
+        <FolderRows value={props.value} depth={props.depth + 1} />
+      </Show>
+    </>
+  );
+}
+
+function FolderIcon(props: { open: boolean }) {
+  return (
+    <svg class="icon folder-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M1.5 3.5h4l1.5 2h7.5v7a.5.5 0 0 1-.5.5h-12a.5.5 0 0 1-.5-.5v-9z" />
+      <Show when={props.open}>
+        <path d="M3 7h11l-1.5 6h-11z" />
+      </Show>
+    </svg>
+  );
 }
 
 // --- the dom tree -------------------------------------------------------------

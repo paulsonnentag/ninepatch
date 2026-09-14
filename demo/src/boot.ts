@@ -8,9 +8,13 @@ import type {
   ChatDoc,
   ContactDoc,
   Folder,
+  MapSurfaceDoc,
   MarkdownDoc,
   PlaceDoc,
   Seed,
+  Shape,
+  SurfaceDoc,
+  SurfaceShape,
   TodoDoc,
 } from "./types";
 
@@ -112,6 +116,13 @@ async function findOrCreateSeed(): Promise<Seed> {
     const todos = repo.create<TodoDoc>({ items: seedTodoItems() });
     folder.change((d) => (d.todos = todos.url));
   }
+  if (!folder.doc().whiteboard) {
+    // seeded before the whiteboard section existed
+    const whiteboard = repo.create<SurfaceDoc>({
+      shapes: seedWhiteboardShapes(),
+    });
+    folder.change((d) => (d.whiteboard = whiteboard.url));
+  }
   const docs = folder.doc();
   type LegacyCanvas = CanvasDoc & {
     cards?: Record<
@@ -169,6 +180,7 @@ async function findOrCreateSeed(): Promise<Seed> {
     todos: docs.todos,
     chat: docs.chat,
     canvas: docs.canvas,
+    whiteboard: docs.whiteboard,
     notes: docs.notes,
     notes2: docs.notes2,
     alice: docs.alice,
@@ -225,4 +237,25 @@ export function seedCanvasItems(): Record<string, CanvasItem> {
 
 function placeItem(docUrl: string, x: number, y: number): CanvasItem {
   return { componentUrl: "./demos/canvas/place.tsx", docUrl, x, y };
+}
+
+// The whiteboard is a surface; its one shape is the map, a second surface
+// with a document of its own, in map units.
+export function seedWhiteboardShapes(): Record<string, Shape> {
+  const map = repo.create<MapSurfaceDoc>({
+    origin: { lng: 13.388, lat: 52.517, zoom: 11 },
+    shapes: {},
+  });
+  const mapShape: SurfaceShape = {
+    componentUrl: "./demos/whiteboard/map.tsx",
+    x: 40,
+    y: 20,
+    outline: rect(290, 380),
+    docUrl: map.url,
+  };
+  return { map: mapShape };
+}
+
+function rect(w: number, h: number): number[] {
+  return [0, 0, w, 0, w, h, 0, h];
 }
