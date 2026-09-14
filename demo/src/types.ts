@@ -15,21 +15,29 @@ export type Place = { id: string; title: string; lat: number; lng: number };
 export type MarkdownDoc = { content: string };
 export type Folder = Record<string, string>;
 
-// A surface is a document of shapes; every shape is a component placed at
-// x/y with an outline of points relative to that position, in the
-// surface's own units. Components narrow the shape they read.
+// A surface holds shapes; every shape is a component placed at x/y with an
+// outline of points relative to that position, in the surface's own units.
+// A shape is its component's document, so a shape that is itself a surface
+// carries its own `shapes` inline.
 export type Shape = {
   componentUrl: string;
   x: number;
   y: number;
   outline: number[]; // flat [x0, y0, x1, y1, ...]
 };
-export type SurfaceShape = Shape & { docUrl: string }; // a shape that is itself a surface
+export type Stroke = Shape & { color: string; width: number }; // a line; also what a pen is
+export type EraserShape = Shape & { width: number };
 export type SurfaceDoc = { shapes: Record<string, Shape> };
-export type MapSurfaceDoc = SurfaceDoc & {
-  origin: { lng: number; lat: number; zoom: number }; // local units: pixels at this zoom, from this point
-};
-export type LocalPointer = { x: number; y: number } | null; // in the units of whoever mounted it
+export type MapShape = Shape &
+  SurfaceDoc & {
+    origin: { lng: number; lat: number; zoom: number }; // local units: pixels at this zoom, from this point
+  };
+export type LocalPointer = { x: number; y: number; down: boolean } | null; // in the units of whoever mounted it
+// the selected tool — one for the whole board, whichever surface is drawn on
+export type Tool =
+  | { id: string; kind: "pen"; color: string; width: number }
+  | { id: string; kind: "eraser"; width: number }
+  | null;
 
 export type Cell = {
   ch: string;

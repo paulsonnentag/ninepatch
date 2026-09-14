@@ -56,6 +56,7 @@ async function reset() {
 }
 
 const browser = frame.fork("browser");
+browser.mount("demo", seed.url); // a link to the seed folder: the documents the url bar knows
 await browser.spawn("Route", moduleUrl("browser/route.ts")).terminated; // mounts `url` and `document`
 const url = await browser.open<string>("url");
 const UrlBar = createComponent(moduleUrl("browser/urlbar.tsx"));

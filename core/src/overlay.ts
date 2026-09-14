@@ -19,33 +19,38 @@ export type Lookup = {
   cutBlocked: boolean;
 };
 
+export type Listing = {
+  /** Children holding a handle or entries of their own. */
+  names: string[];
+  /** Children that are cuts: hidden here and below. */
+  cuts: string[];
+  /** A cut on the way to (or at) this node: nothing inherited shows. */
+  blocked: boolean;
+};
+
 export class Overlay {
   readonly mutated = new Emitter();
   private readonly root: OverlayNode = newNode();
   private readonly urls = new Map<string, OverlayNode>();
 
   lookup(names: string[]): Lookup {
-    let cutBlocked = false;
-    let node: OverlayNode | undefined;
-    let rest: string[];
-    if (isUrlRooted(names)) {
-      node = this.urls.get(names[0]);
-      rest = names.slice(1);
-    } else {
-      node = this.root;
-      rest = names;
-    }
-    if (node?.cut) cutBlocked = true;
-    for (const name of rest) {
-      if (!node) break;
-      node = node.children.get(name);
-      if (node?.cut) cutBlocked = true;
-    }
+    const { node, blocked } = this.find(names);
     return {
       handle: node?.handle,
       hasEntries: !!node && node.children.size > 0,
-      cutBlocked,
+      cutBlocked: blocked,
     };
+  }
+
+  list(names: string[]): Listing {
+    const { node, blocked } = this.find(names);
+    const out: Listing = { names: [], cuts: [], blocked };
+    if (!node) return out;
+    for (const [name, child] of node.children) {
+      if (child.handle || child.children.size > 0) out.names.push(name);
+      else if (child.cut) out.cuts.push(name);
+    }
+    return out;
   }
 
   /** Every node holding a handle or a cut, paths first, then URLs. */
@@ -68,6 +73,41 @@ export class Overlay {
     node.children.clear();
     node.cut = true;
     this.mutated.emit();
+  }
+
+  /** Takes back a mount (or a cut, for `undefined`) if it is still the one
+   * given — no cut is left behind, and fall-through resumes. */
+  remove(names: string[], handle: Handle<unknown> | undefined): void {
+    const { node } = this.find(names);
+    if (!node) return;
+    if (handle ? node.handle !== handle : node.handle || !node.cut) return;
+    node.handle = undefined;
+    node.cut = false;
+    this.prune(names);
+    this.mutated.emit();
+  }
+
+  private find(names: string[]): {
+    node: OverlayNode | undefined;
+    blocked: boolean;
+  } {
+    let blocked = false;
+    let node: OverlayNode | undefined;
+    let rest: string[];
+    if (isUrlRooted(names)) {
+      node = this.urls.get(names[0]);
+      rest = names.slice(1);
+    } else {
+      node = this.root;
+      rest = names;
+    }
+    if (node?.cut) blocked = true;
+    for (const name of rest) {
+      if (!node) break;
+      node = node.children.get(name);
+      if (node?.cut) blocked = true;
+    }
+    return { node, blocked };
   }
 
   private ensure(names: string[]): OverlayNode {
@@ -94,6 +134,32 @@ export class Overlay {
       node = child;
     }
     return node;
+  }
+
+  // drop empty nodes from `names` upward
+  private prune(names: string[]): void {
+    const chain: { parent: Map<string, OverlayNode>; name: string }[] = [];
+    let node: OverlayNode | undefined;
+    let rest: string[];
+    if (isUrlRooted(names)) {
+      node = this.urls.get(names[0]);
+      rest = names.slice(1);
+      chain.push({ parent: this.urls, name: names[0] });
+    } else {
+      node = this.root;
+      rest = names;
+    }
+    for (const name of rest) {
+      if (!node) return;
+      chain.push({ parent: node.children, name });
+      node = node.children.get(name);
+    }
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const { parent, name } = chain[i];
+      const n = parent.get(name);
+      if (!n || n.handle || n.cut || n.children.size > 0) break;
+      parent.delete(name);
+    }
   }
 }
 

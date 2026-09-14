@@ -1,22 +1,26 @@
 import { Map as LibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { derive, type Directory } from "@ninepatch/core";
-import type { LocalPointer, MapSurfaceDoc, SurfaceShape } from "../../types";
+import type { LocalPointer, MapShape, SurfaceDoc, Tool } from "../../types";
 import { bounds } from "./geometry";
+import { surface } from "./surface";
 
-// A shape that is a surface: rio in a rio window. The map consumes the
-// `ui` of the surface it sits on, and serves its own to its shapes: the
-// projected layer as `ui/dom`, the pointer translated into map units —
-// pixels at the origin zoom, measured from the origin — as `ui/pointer`,
-// and its own document as `ui/surface`, with the surface below mounted
-// into it as `parent`. Then it runs the same Surface the board runs.
+// A shape that is a surface: rio in a rio window. Its own record becomes
+// the surface its shapes sit on — the projected layer as `dom`, the
+// pointer of the surface below translated into map units (pixels at the
+// origin zoom, measured from the origin) as `pointer`, and that surface as
+// `parent`, so the chain leads back up — mounted onto the record, where
+// the surface below reads them at shapes/<id>/…. With a tool selected the
+// map holds still and takes the ink.
 export default async function MapSurface(dir: Directory) {
-  const dom = await dir.open<Element>("ui/dom");
-  const doc = await dir.open<MapSurfaceDoc>("document");
-  const shape = await dir.open<SurfaceShape>("shape");
-  const outer = await dir.open<LocalPointer>("ui/pointer"); // in the units of the surface below us
+  const shape = await dir.open<MapShape>("document");
+  const parent = await dir.open<SurfaceDoc>("parent"); // the surface below, by a name I won't redefine
+  const outer = await dir.open<LocalPointer>("parent/pointer"); // in its units
+  const dom = await dir.open<HTMLElement>("dom");
+  const tool = await dir.open<Tool>("tool");
 
-  const box = bounds(shape.value.outline);
+  const { origin, outline } = shape.value;
+  const box = bounds(outline);
   const frame = dom.value.appendChild(document.createElement("div"));
   frame.className = "map-surface";
   Object.assign(frame.style, {
@@ -30,7 +34,6 @@ export default async function MapSurface(dir: Directory) {
   const layer = frame.appendChild(document.createElement("div"));
   layer.className = "layer";
 
-  const { origin } = doc.value;
   const map = new LibreMap({
     style: "https://tiles.openfreemap.org/styles/liberty",
     center: [origin.lng, origin.lat],
@@ -51,30 +54,35 @@ export default async function MapSurface(dir: Directory) {
   map.on("move", place);
   place();
 
-  // this surface: its own document, with the one below mounted in as
-  // `parent` — so `ui/surface/parent` walks back out, level by level
-  doc.mount("parent", await dir.open("ui/surface"));
+  const unsubscribe = tool.subscribe((t) => {
+    if (t) map.dragPan.disable();
+    else map.dragPan.enable();
+    frame.classList.toggle("drawing", !!t);
+  });
 
-  const inner = dir.fork("surface");
-  inner.mount("ui/dom", layer);
-  inner.mount(
-    "ui/pointer",
+  dir.signal.addEventListener("abort", () => {
+    unsubscribe();
+    map.remove();
+    frame.remove();
+  });
+
+  // this record as a surface, for my shapes and for whoever reads the one below
+  shape.mount("dom", layer);
+  shape.mount("parent", parent);
+  shape.mount(
+    "pointer",
     derive<LocalPointer, LocalPointer>(outer, (p) => {
       if (!p) return null;
       const { x, y } = shape.value; // where this shape sits on the surface below
       const o = anchor();
       const k = scale();
       return {
+        ...p,
         x: (p.x - x - box.x - o.x) / k,
         y: (p.y - y - box.y - o.y) / k,
       };
     })
   );
-  inner.mount("ui/surface", doc);
-  inner.spawn("Surface", "./demos/whiteboard/surface.tsx");
-
-  dir.signal.addEventListener("abort", () => {
-    map.remove();
-    frame.remove();
-  });
+  dir.mount("surface", shape); // over the inherited one: from here down, I am the surface
+  await surface(dir);
 }

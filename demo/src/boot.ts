@@ -1,20 +1,21 @@
 import { Repo, type AnyDocumentId } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
-import { createDirectory, field, fromDoc, type Main } from "@ninepatch/core";
+import { createDirectory, fromDoc, type Main } from "@ninepatch/core";
 import type {
   CanvasDoc,
   CanvasItem,
   ChatDoc,
   ContactDoc,
   Folder,
-  MapSurfaceDoc,
+  EraserShape,
+  MapShape,
   MarkdownDoc,
   PlaceDoc,
   Seed,
   Shape,
+  Stroke,
   SurfaceDoc,
-  SurfaceShape,
   TodoDoc,
 } from "./types";
 
@@ -59,26 +60,17 @@ const root = createDirectory({
 // the root's process table; only the harness's data panel reads this
 export const processes = root.processes;
 
-// The repo, as a server — verbatim from the spec. Filters by protocol,
-// walks into documents itself, mounts every asked-for field as a live
-// handle. Nothing in the directory knows what a document is.
+// The repo, as a server — verbatim from the spec. Answers whole documents;
+// the directory walks into them by key. Nothing here knows what a field is.
 root.serve({
-  async open(target, from) {
-    const [url, ...fields] = target;
-    if (!url.startsWith("automerge:")) return;
-    if (fields.length === 0) {
-      from.mount(url, fromDoc(await repo.find(url as AnyDocumentId)));
-      return;
-    }
-    const doc = await from.open<Record<string, unknown>>(url); // a miss the first time: this same handler fills it
-    from.mount(target, field(doc, fields)); // doc is a handle; it closes with the requester
+  async open([url, ...fields], from) {
+    if (!url.startsWith("automerge:") || fields.length > 0) return;
+    from.mount(url, fromDoc(await repo.find(url as AnyDocumentId)));
   },
-  close(target, from) {
-    if (target[0].startsWith("automerge:")) from.unmount(target);
+  close([url, ...fields], from) {
+    if (url.startsWith("automerge:") && fields.length === 0) from.unmount(url);
   },
 });
-
-root.mount("demo", seed.url); // a link; demo/chat walks the folder and follows again
 
 export const frame = root.fork("page"); // the page renders under this
 
@@ -124,6 +116,22 @@ async function findOrCreateSeed(): Promise<Seed> {
     folder.change((d) => (d.whiteboard = whiteboard.url));
   }
   const docs = folder.doc();
+  const whiteboard = await repo.find<SurfaceDoc>(
+    docs.whiteboard as AnyDocumentId
+  );
+  if (
+    !Object.values(whiteboard.doc().shapes).some((shape) =>
+      shape.componentUrl.endsWith("/pen.tsx")
+    )
+  ) {
+    // seeded when a nested surface was a document of its own, or before
+    // the tools were shapes
+    const shapes = seedWhiteboardShapes();
+    whiteboard.change((d) => {
+      for (const id of Object.keys(d.shapes)) delete d.shapes[id];
+      Object.assign(d.shapes, shapes);
+    });
+  }
   type LegacyCanvas = CanvasDoc & {
     cards?: Record<
       string,
@@ -239,21 +247,40 @@ function placeItem(docUrl: string, x: number, y: number): CanvasItem {
   return { componentUrl: "./demos/canvas/place.tsx", docUrl, x, y };
 }
 
-// The whiteboard is a surface; its one shape is the map, a second surface
-// with a document of its own, in map units.
+// The whiteboard is a canvas whose shapes include its own tools — pens and
+// an eraser are buttons — and the map, a second surface inline, drawn on
+// in map units.
 export function seedWhiteboardShapes(): Record<string, Shape> {
-  const map = repo.create<MapSurfaceDoc>({
+  const pen = (y: number, color: string, width: number): Stroke => ({
+    componentUrl: "./demos/whiteboard/pen.tsx",
+    x: 14,
+    y,
+    outline: rect(28, 28),
+    color,
+    width,
+  });
+  const eraser: EraserShape = {
+    componentUrl: "./demos/whiteboard/eraser.tsx",
+    x: 14,
+    y: 122,
+    outline: rect(28, 28),
+    width: 12,
+  };
+  const map: MapShape = {
+    componentUrl: "./demos/whiteboard/map.tsx",
+    x: 60,
+    y: 20,
+    outline: rect(320, 380),
     origin: { lng: 13.388, lat: 52.517, zoom: 11 },
     shapes: {},
-  });
-  const mapShape: SurfaceShape = {
-    componentUrl: "./demos/whiteboard/map.tsx",
-    x: 40,
-    y: 20,
-    outline: rect(290, 380),
-    docUrl: map.url,
   };
-  return { map: mapShape };
+  return {
+    black: pen(14, "#111827", 3),
+    red: pen(50, "#e11d48", 4),
+    blue: pen(86, "#2563eb", 8),
+    eraser,
+    map,
+  };
 }
 
 function rect(w: number, h: number): number[] {

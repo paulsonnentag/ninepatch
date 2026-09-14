@@ -1,10 +1,14 @@
 import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed, seedWhiteboardShapes } from "../../boot";
 import { Section } from "../../harness";
-import type { SurfaceDoc } from "../../types";
-import surfaceSource from "./surface.tsx?raw";
-import inputSource from "./input.ts?raw";
+import type { SurfaceDoc, Tool } from "../../types";
+import canvasSource from "./canvas.tsx?raw";
 import mapSource from "./map.tsx?raw";
+import surfaceSource from "./surface.tsx?raw";
+import penSource from "./pen.tsx?raw";
+import eraserSource from "./eraser.tsx?raw";
+import lineSource from "./line.tsx?raw";
+import inputSource from "./input.ts?raw";
 import geometrySource from "./geometry.ts?raw";
 
 export function WhiteboardDemo() {
@@ -14,22 +18,32 @@ export function WhiteboardDemo() {
       chain={[frame, root]}
       reset={reset}
       sources={[
-        { name: "surface.tsx", code: surfaceSource },
-        { name: "input.ts", code: inputSource },
+        { name: "canvas.tsx", code: canvasSource },
         { name: "map.tsx", code: mapSource },
+        { name: "surface.tsx", code: surfaceSource },
+        { name: "pen.tsx", code: penSource },
+        { name: "eraser.tsx", code: eraserSource },
+        { name: "line.tsx", code: lineSource },
+        { name: "input.ts", code: inputSource },
         { name: "geometry.ts", code: geometrySource },
       ]}
       prose={
         <p>
-          A surface is a process that gives every shape a namespace under{" "}
-          <code>ui</code>: its element as <code>ui/dom</code>, the pointer as{" "}
-          <code>ui/pointer</code> — recorded once, at the root — and{" "}
-          <code>ui/surface</code>, the surface it sits on: its document, with
-          the surface below mounted into it as <code>parent</code>. The map
-          overrides all three for its own shapes — it projects the pointer into
-          map units and runs the same Surface on its layer — and{" "}
-          <code>ui/surface/parent</code> still walks back out to the board. Pan
-          or zoom the map and watch the same pointer read differently in each.
+          Rio, one level at a time. The root has a <code>pointer</code> — a
+          recorder writes it, in the board's pixels — and nothing else. The
+          canvas is a component below it that makes its document a{" "}
+          <code>surface</code>: a directory, with <code>dom</code> and the{" "}
+          <code>pointer</code> in its units mounted onto it, and every shape in
+          it placed as a component of its own — its record as{" "}
+          <code>document</code>, opened through the surface, and the surface as{" "}
+          <code>parent</code>. The map is one of those shapes and a surface in
+          turn: it mounts its layer, the pointer in map units and its{" "}
+          <code>parent</code> onto its own record, so the canvas reads them at{" "}
+          <code>surface/shapes/map/pointer</code> and the chain leads back up.
+          The pens and the eraser are shapes on the canvas too; clicking one
+          sets <code>tool</code> at the top, and whichever surface the pointer
+          is down on — the canvas, or the map when it is under the pointer —
+          draws with it in its own units.
         </p>
       }
     >
@@ -40,19 +54,20 @@ export function WhiteboardDemo() {
 
 async function reset() {
   const doc = await repo.find<SurfaceDoc>(seed.whiteboard as AnyDocumentId);
-  const shapes = seedWhiteboardShapes(); // a fresh map document
+  const shapes = seedWhiteboardShapes();
   doc.change((d) => {
     for (const id of Object.keys(d.shapes)) delete d.shapes[id];
     Object.assign(d.shapes, shapes);
   });
 }
 
-const root = frame.fork("root"); // "root" loosely: this demo's world
+const root = frame.fork("root");
 const board = document.createElement("div");
 board.className = "whiteboard";
-root.mount("ui/dom", board); // the recorder measures it, the surface draws in it: one coordinate space
-await root.spawn("Input", moduleUrl("whiteboard/input.ts")).terminated; // mounts `ui/pointer`
-const surface = root.fork("Whiteboard");
-// the board's surface object: its document, with nothing mounted in — the root has no parent
-surface.mount("ui/surface", await surface.open<SurfaceDoc>(seed.whiteboard));
-surface.spawn("Surface", moduleUrl("whiteboard/surface.tsx"));
+root.mount("dom", board);
+await root.spawn("Input", moduleUrl("whiteboard/input.ts")).terminated; // mounts `pointer`, in the board's pixels
+
+const canvas = root.fork("canvas");
+canvas.mount("document", seed.whiteboard); // a link: the canvas document
+canvas.mount("tool", null as Tool); // the selected pen, for every surface below
+canvas.spawn("Canvas", moduleUrl("whiteboard/canvas.tsx"));

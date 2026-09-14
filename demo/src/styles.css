@@ -350,6 +350,18 @@ body.dragging {
   border-right: 1px solid var(--line);
 }
 
+/* a name with names below it is walked into: a chevron at the row's end */
+.tree-more {
+  flex: none;
+  color: var(--faint);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.tree-item.selected .tree-more {
+  color: white;
+}
+
 .window {
   position: relative;
   display: flex;
@@ -517,13 +529,43 @@ body.resizing {
   stroke-width: 1.6;
 }
 
-.window-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #444;
+/* where the window is looking, as a breadcrumb: the directory, then each
+   name walked into; click one to go back to it */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.crumb {
+  flex: none;
+  padding: 0 0.15rem;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.crumb:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #444;
+}
+
+.crumb.current {
+  color: #444;
+  cursor: default;
+}
+
+.crumb-sep {
+  flex: none;
+  color: var(--faint);
 }
 
 /* what a closed window is hiding */
@@ -1294,6 +1336,7 @@ body.resizing {
     white;
   overflow: hidden;
   touch-action: none;
+  cursor: crosshair;
   user-select: none;
 }
 
@@ -1330,6 +1373,49 @@ body.resizing {
   transform-origin: 0 0;
   pointer-events: none;
   z-index: 2;
+}
+
+/* with a tool selected the map holds still and takes the ink */
+.map-surface.drawing {
+  cursor: crosshair;
+}
+
+/* a line: its outline as a polyline from the shape's origin */
+.stroke {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* the tools: round buttons on the surface, the selected one ringed */
+.pen {
+  position: absolute;
+  padding: 0;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.pen .tip {
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.pen.eraser {
+  background: #fff;
+  border-color: #d1d5db;
+}
+
+.pen.active {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* the url example: a little browser — chrome bar with the url pill, the

@@ -13,7 +13,14 @@ import {
 } from "./handle";
 import { Overlay, type Entry } from "./overlay";
 import { isUrlRooted, parsePath, startsWith, type Path } from "./path";
-import { walk, type ChainNode, type WalkResult } from "./walk";
+import {
+  canonical,
+  locate,
+  names,
+  walk,
+  type ChainNode,
+  type WalkResult,
+} from "./walk";
 
 export type { Entry };
 
@@ -22,25 +29,32 @@ export type Directory = {
   readonly name: string;
   /** Where this was opened, relative to its source — `[]` for a fork. */
   readonly path: readonly string[];
-  /** Own entries only — mounted, served, or cut; nothing inherited. */
+  /** The raw own layer, for tooling: mounts, fills and cuts, as paths. */
   readonly entries: Handle<Entry[]>;
   /** Everything opened or forked from here that is still open. */
   readonly children: Handle<Directory[]>;
   /** Aborts when this directory is closed, directly or from above. */
   readonly signal: AbortSignal;
 
-  /** A new directory reading through this one at `path`; a named type makes it a handle too. */
-  open<T = never>(path: Path): Promise<Opened<T>>;
+  /** A new directory reading through this one at `path`; a named type makes it a handle too. The name is a label, defaulting to the path. */
+  open<T = never>(path: Path, name?: string): Promise<Opened<T>>;
 
   /** The same names at the empty path; writes stay in the fork. */
   fork<Self>(this: Self, name?: string): Self;
 
-  /** Into own entries, replacing. A Handle as-is; a Directory is a bind —
-   * walks continue inside it, and it has no value of its own; anything
-   * else wrapped. Through a view whose path crosses a bind, the mount
-   * lands in the bound directory. */
+  /** The names a reader sees at `path`: own and inherited entries, minus
+   * cuts, plus the keys of the value there. Live. Never asks a server. */
+  list(path?: Path): Handle<string[]>;
+  /** For tooling: what a read of `path` lands on, and whose own entry it
+   * is — no owner for a field of a value. Live. Never asks a server. */
+  resolve(path?: Path): Handle<Resolution | undefined>;
+
+  /** Where the path resolves: a Handle as-is, a Directory as a bind,
+   * anything else wrapped. Past a link the mount is keyed by the URL;
+   * past a bind it lands in the bound directory — and is taken back when
+   * this directory closes. */
   mount(path: Path, what: unknown): void;
-  /** Remove and cut fall-through there — permanently, for this and below. */
+  /** Remove and cut fall-through there, for this directory and below. */
   unmount(path: Path): void;
 
   /** Answer misses at or below here. Returns unregister. */
@@ -63,6 +77,15 @@ export type Server = {
 };
 
 export type Opened<T> = [T] extends [never] ? Directory : Directory & Handle<T>;
+
+/** Where a path landed: the handle there and, when it is an entry rather
+ * than a field, the directory that mounted it and the path in its own
+ * coordinates. */
+export type Resolution = {
+  handle: Handle<unknown>;
+  owner: Directory | undefined;
+  ownerPath: string[] | undefined;
+};
 
 /** What spawn runs. Returning ends nothing; closing `dir` does. */
 export type Main = (dir: Directory) => Promise<void> | void;
@@ -110,6 +133,12 @@ export function createDirectory(options?: {
 
 type Held = { requester: DirectoryImpl; key: string };
 type Fired = { key: string; target: string[] };
+// a mount or cut this directory made in another's overlay
+type Through = {
+  dir: DirectoryImpl;
+  names: string[];
+  handle: Handle<unknown> | undefined;
+};
 
 export class DirectoryImpl {
   readonly [brand] = true;
@@ -143,6 +172,9 @@ export class DirectoryImpl {
   private readonly importer:
     ((url: string) => Promise<{ default: Main }>) | undefined;
   private held: Held[] = [];
+  private through: Through[] = [];
+  /** Live reads (listings, resolutions) with subscribers, stopped on close. */
+  readonly live = new Set<Live<unknown>>();
   private watch: Watch | undefined;
 
   constructor(
@@ -169,11 +201,11 @@ export class DirectoryImpl {
     return this.controller.signal;
   }
 
-  async open(path: Path): Promise<DirectoryImpl> {
+  async open(path: Path, name?: string): Promise<DirectoryImpl> {
     this.assertOpen();
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path — use fork()");
-    return this.openRel(rel);
+    return this.openRel(rel, name);
   }
 
   fork(name = "fork"): DirectoryImpl {
@@ -181,20 +213,43 @@ export class DirectoryImpl {
     return this.adopt(new DirectoryImpl(this, [], name));
   }
 
+  list(path: Path = []): Handle<string[]> {
+    return new Live(this, parsePath(path), (dir, rel) =>
+      dir.closed ? [] : names(dir, rel)
+    );
+  }
+
+  resolve(path: Path = []): Handle<Resolution | undefined> {
+    return new Live(this, parsePath(path), (dir, rel) =>
+      dir.closed ? undefined : resolution(dir, rel)
+    );
+  }
+
   mount(path: Path, what: unknown): void {
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path");
-    const bound = this.boundAt();
-    if (bound) return bound.dir.mount([...bound.rest, ...rel], what);
-    this.overlay.mount(rel, isHandle(what) ? what : wrap(what));
+    const handle = isHandle(what) ? what : wrap(what);
+    const { dir, names } = canonical(this, rel);
+    const target = dir as DirectoryImpl;
+    target.overlay.mount(names, handle);
+    // a bind is taken back when the bound directory closes
+    if (handle instanceof DirectoryImpl && handle !== target)
+      handle.signal.addEventListener(
+        "abort",
+        () => target.overlay.remove(names, handle),
+        { once: true }
+      );
+    if (target !== this) this.through.push({ dir: target, names, handle });
   }
 
   unmount(path: Path): void {
     const rel = parsePath(path);
     if (rel.length === 0) throw new Error("empty path");
-    const bound = this.boundAt();
-    if (bound) return bound.dir.unmount([...bound.rest, ...rel]);
-    this.overlay.unmount(rel);
+    const { dir, names } = canonical(this, rel);
+    const target = dir as DirectoryImpl;
+    target.overlay.unmount(names);
+    if (target !== this)
+      this.through.push({ dir: target, names, handle: undefined });
   }
 
   serve(server: Server): () => void {
@@ -244,6 +299,12 @@ export class DirectoryImpl {
     for (const child of [...this.kids].reverse()) child.close();
     this.kids.clear();
     this.watch?.stop();
+    for (const read of this.live) read.stop();
+    this.live.clear();
+    const through = this.through;
+    this.through = [];
+    for (const { dir, names, handle } of through)
+      dir.overlay.remove(names, handle);
     this.changes.clear();
     this.kidsChanged.clear();
     this.tableChanged.clear();
@@ -304,9 +365,9 @@ export class DirectoryImpl {
 
   // --- internals -----------------------------------------------------------
 
-  async openRel(rel: string[]): Promise<DirectoryImpl> {
+  async openRel(rel: string[], name = rel.join("/")): Promise<DirectoryImpl> {
     const { fired } = await resolveWithFills(this, rel);
-    const child = this.adopt(new DirectoryImpl(this, rel, rel.join("/")));
+    const child = this.adopt(new DirectoryImpl(this, rel, name));
     child.hold(this, fired);
     return child;
   }
@@ -341,14 +402,6 @@ export class DirectoryImpl {
     return this.controller.signal.aborted;
   }
 
-  // a view whose path crosses a bind reads and writes the bound directory
-  private boundAt(): { dir: DirectoryImpl; rest: string[] } | undefined {
-    if (!this.parent || this.path.length === 0) return undefined;
-    const bound = walk(this.parent, this.path).bound;
-    if (!bound) return undefined;
-    return { dir: bound.dir as DirectoryImpl, rest: bound.rest };
-  }
-
   private adopt(child: DirectoryImpl): DirectoryImpl {
     this.kids.add(child);
     this.kidsChanged.emit();
@@ -381,12 +434,13 @@ async function resolveWithFills(
   for (let attempt = 0; attempt < 32; attempt++) {
     const result = walk(requester, rel);
     if (result.kind === "found") return { result, fired };
-    const key = JSON.stringify(result.at);
+    const target = missing(requester, result);
+    const key = JSON.stringify(target);
     const existing = requester.pending.get(key);
     if (existing) {
       await existing;
     } else {
-      const request = fireOpen(requester, result.at);
+      const request = fireOpen(requester, target);
       requester.pending.set(key, request);
       try {
         await request;
@@ -394,12 +448,24 @@ async function resolveWithFills(
         requester.pending.delete(key);
       }
     }
-    fired.push({ key, target: result.at });
+    fired.push({ key, target });
     const again = walk(requester, rel);
     if (again.kind === "found") return { result: again, fired };
-    if (JSON.stringify(again.at) === key) throw new NotFound(again.at);
+    if (JSON.stringify(missing(requester, again)) === key)
+      throw new NotFound(again.at);
   }
   throw new NotFound(rel);
+}
+
+// what to ask the servers for: a path inside a document that isn't there
+// yet is a request for the document
+function missing(
+  requester: DirectoryImpl,
+  result: Extract<WalkResult, { kind: "miss" }>
+): string[] {
+  const { at, base } = result;
+  if (!isUrlRooted(at) || at.length === 1) return at;
+  return locate(base, [at[0]], requester).handle ? at : [at[0]];
 }
 
 // every server up the chain hears the miss as it reads from its directory
@@ -481,14 +547,18 @@ class FromView {
     return this.requester.signal;
   }
 
-  open(path: Path): Promise<DirectoryImpl> {
+  open(path: Path, name?: string): Promise<DirectoryImpl> {
     const rel = this.rel(path);
     if (rel.length === 0) throw new Error("empty path — use fork()");
-    return this.requester.openRel(rel);
+    return this.requester.openRel(rel, name);
   }
 
   fork(name?: string): DirectoryImpl {
     return this.requester.fork(name);
+  }
+
+  list(path: Path = []): Handle<string[]> {
+    return this.requester.list(this.rel(path));
   }
 
   mount(path: Path, what: unknown): void {
@@ -606,29 +676,131 @@ class Watch {
 
   private resubscribe(result: WalkResult | undefined): void {
     for (const unsub of this.unsubHandles) unsub();
-    this.unsubHandles = [];
-    if (!result) return;
-    // the chains of entered binds; the own chain is subscribed for good
-    const seen = new Set<Overlay>();
-    for (let n: ChainNode | undefined = this.dir; n; n = n.parent)
-      seen.add(n.overlay);
-    for (const bind of result.entered)
-      for (let n: ChainNode | undefined = bind; n; n = n.parent)
-        if (!seen.has(n.overlay)) {
-          seen.add(n.overlay);
-          this.unsubHandles.push(
-            n.overlay.mutated.on(() => this.trigger(false))
-          );
-        }
-    const handles = [...result.crossed];
-    if (result.kind === "found" && result.handle) handles.push(result.handle);
-    for (const handle of handles) {
-      try {
-        this.unsubHandles.push(onChange(handle, () => this.trigger(true)));
-      } catch {
-        // Its first read threw (a derivation over nothing yet): the overlay
-        // chain still triggers a re-walk, and we subscribe again then.
+    this.unsubHandles = result
+      ? trackWalk(this.dir, result, (fired) => this.trigger(fired))
+      : [];
+  }
+}
+
+// what a walk depends on beyond the walker's own chain: the chains of the
+// binds it entered, and every handle it read
+function trackWalk(
+  dir: ChainNode,
+  result: WalkResult,
+  trigger: (handleFired: boolean) => void
+): (() => void)[] {
+  const unsubs: (() => void)[] = [];
+  const seen = new Set<Overlay>();
+  for (let n: ChainNode | undefined = dir; n; n = n.parent) seen.add(n.overlay);
+  for (const bind of result.entered)
+    for (let n: ChainNode | undefined = bind; n; n = n.parent)
+      if (!seen.has(n.overlay)) {
+        seen.add(n.overlay);
+        unsubs.push(n.overlay.mutated.on(() => trigger(false)));
       }
+  const handles = new Set(result.crossed);
+  if (result.kind === "found" && result.handle) handles.add(result.handle);
+  for (const handle of handles) {
+    try {
+      unsubs.push(onChange(handle, () => trigger(true)));
+    } catch {
+      // Its first read threw (a derivation over nothing yet): the overlay
+      // chain still triggers a re-walk, and we subscribe again then.
     }
+  }
+  return unsubs;
+}
+
+// what a read of `rel` lands on, for tooling; nothing when nothing is there
+function resolution(dir: DirectoryImpl, rel: string[]): Resolution | undefined {
+  let result: WalkResult;
+  try {
+    result = walk(dir, rel);
+  } catch {
+    return undefined;
+  }
+  if (result.kind !== "found" || !result.handle) return undefined;
+  return {
+    handle: result.handle,
+    owner: result.owner as Directory | undefined,
+    ownerPath: result.ownerPath,
+  };
+}
+
+// a live read over a walk of `rel` — a listing, a resolution — recomputed
+// when the own chain, an entered bind, or a handle on the way changes;
+// never asks a server
+class Live<T> implements Handle<T> {
+  readonly [brand] = true;
+  private readonly changes = new Emitter();
+  private unsubOverlays: (() => void)[] = [];
+  private unsubHandles: (() => void)[] = [];
+  private tracking = false;
+  private stopped = false;
+  private queued = false;
+
+  constructor(
+    private readonly dir: DirectoryImpl,
+    private readonly rel: string[],
+    private readonly compute: (dir: DirectoryImpl, rel: string[]) => T
+  ) {}
+
+  get value(): T {
+    return this.compute(this.dir, this.rel);
+  }
+
+  set(): void {
+    throw new Error("read-only handle");
+  }
+
+  change(): void {
+    throw new Error("read-only handle");
+  }
+
+  subscribe(fn: (value: T) => void): () => void {
+    fn(this.value);
+    if (!this.tracking && !this.stopped && !this.dir.closed) this.track();
+    return this.changes.on(() => fn(this.value));
+  }
+
+  stop(): void {
+    this.stopped = true;
+    for (const unsub of this.unsubOverlays) unsub();
+    for (const unsub of this.unsubHandles) unsub();
+    this.unsubOverlays = [];
+    this.unsubHandles = [];
+    this.changes.clear();
+  }
+
+  private track(): void {
+    this.tracking = true;
+    this.dir.live.add(this);
+    for (let n: DirectoryImpl | undefined = this.dir; n; n = n.parent)
+      this.unsubOverlays.push(n.overlay.mutated.on(() => this.trigger()));
+    this.resubscribe();
+  }
+
+  private trigger(): void {
+    if (this.stopped || this.queued) return;
+    this.queued = true;
+    queueMicrotask(() => {
+      this.queued = false;
+      if (this.stopped) return;
+      this.resubscribe();
+      this.changes.emit();
+    });
+  }
+
+  private resubscribe(): void {
+    for (const unsub of this.unsubHandles) unsub();
+    let result: WalkResult | undefined;
+    try {
+      result = walk(this.dir, this.rel);
+    } catch {
+      result = undefined;
+    }
+    this.unsubHandles = result
+      ? trackWalk(this.dir, result, () => this.trigger())
+      : [];
   }
 }

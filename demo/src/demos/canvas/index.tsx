@@ -44,6 +44,7 @@ async function reset() {
 }
 
 const root = frame.fork("root"); // "root" loosely: this demo's world
+root.mount("canvas", seed.canvas); // a link: the canvas document, for anything running here
 root.mount("selection", null as string | null); // a plain value; never touches a document
 await root.spawn("Places", moduleUrl("canvas/places.ts")).terminated; // follows the items' docs, mounts `places`
 const Canvas = createComponent<{ document: string }>(

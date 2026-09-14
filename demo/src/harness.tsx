@@ -18,11 +18,13 @@ import {
   type JSX,
 } from "solid-js";
 import {
+  field,
   hasScheme,
   type Handle,
   type Directory,
   type Main,
   type Process,
+  type Resolution,
 } from "@ninepatch/core";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting } from "@codemirror/language";
@@ -173,20 +175,38 @@ function opensDecorations(code: string) {
 
 // --- the windows --------------------------------------------------------------
 
-type EntryRow = {
-  key: string;
-  path: string[];
-  handle: Handle<unknown>;
-  /** Whose overlay it sits in: this directory, or one it inherits from. */
+// where a name comes from: the directory whose entry holds it; a name
+// with no owner is a key of the value there
+type Owner = {
   owner: Directory;
+  handle: Handle<unknown>;
   inherited: boolean;
+  /** The entry's path in the owner's own coordinates. */
+  ownerPath: string[];
 };
 
-// an entry picked in some window, and that window's probe for links
+function ownerOf(
+  self: Directory,
+  r: Resolution | undefined
+): Owner | undefined {
+  if (!r?.owner || !r.ownerPath) return undefined;
+  return {
+    owner: r.owner,
+    handle: r.handle,
+    inherited: r.owner !== self,
+    ownerPath: r.ownerPath,
+  };
+}
+
+// a path picked in some window — one name per column — and that window's
+// probe for opening things
 type Selection = {
-  row: EntryRow;
+  path: string[];
   dir: Directory;
   probe: Directory | undefined;
+  /** The thing at the end of the path: the entry as mounted, or a field. */
+  handle: Handle<unknown> | undefined;
+  from: Owner | undefined;
 };
 
 // how a window is found from elsewhere — the preview's "from" link
@@ -264,8 +284,8 @@ function trackFocusedUrl() {
   createRoot(() =>
     createEffect(() => {
       const sel = focusedSelection();
-      if (!sel) return setFocusedUrl(undefined);
-      const unsub = sel.row.handle.subscribe((v) =>
+      if (!sel?.handle) return setFocusedUrl(undefined);
+      const unsub = sel.handle.subscribe((v) =>
         setFocusedUrl(typeof v === "string" && hasScheme(v) ? v : undefined)
       );
       onCleanup(unsub);
@@ -273,9 +293,11 @@ function trackFocusedUrl() {
   );
 }
 
-// one directory as a window: inherited entries faint, own after, children
-// hanging below; a directory that mounted nothing is not drawn, and the
-// viewer's own opens go through a probe fork so they never show as windows
+// one directory as a window: what a reader sees, as columns — pick a name
+// and the next column is what is below it, down to a leaf's value;
+// children hang below the window; a directory that mounted nothing is not
+// drawn, and the viewer's own opens go through a probe fork so they never
+// show as windows
 function Node(props: {
   chain: Directory[];
   depth: number;
@@ -287,8 +309,9 @@ function Node(props: {
   const self = props.chain[props.chain.length - 1];
   const probe = tryFork(self);
   onCleanup(() => probe?.close());
-  const rows = createRows(props.chain);
-  const own = () => rows().filter((row) => !row.inherited);
+  const names = from(self.list(), self.list().value);
+  const entries = from(self.entries, self.entries.value);
+  const own = () => entries().filter((e) => e.handle && !hasScheme(e.path[0]));
   const kids = from(self.children, self.children.value);
   /** What runs here — drawn beside the window, never inside it. */
   const procs = () => props.processes().filter((p) => p.at === self);
@@ -309,15 +332,11 @@ function Node(props: {
   // nothing to show: mounted nothing and runs nothing
   const transparent = () =>
     procs().length === 0 &&
-    (props.depth > 0 ? own().length === 0 : rows().length === 0);
+    (props.depth > 0 ? own().length === 0 : names().length === 0);
   const [folded, setFolded] = createSignal(props.depth > 0); // nested windows start closed
   const [height, setHeight] = createSignal(250);
   // the process whose source is open in the code column beside this window
   const [code, setCode] = createSignal<Process>();
-  const isLit = (row: EntryRow) => {
-    const dep = hoveredDep();
-    return dep?.name === row.key && procs().some((p) => p.pid === dep.pid);
-  };
   const sourceFor = (p: Process) =>
     props.sources.find((src) => src.name === p.url.split("/").pop());
   let el!: HTMLDivElement;
@@ -341,24 +360,33 @@ function Node(props: {
 
   const mine = () => selections().get(self);
   const isFocused = () => focusedWindow() === self;
-  const isSelected = (row: EntryRow) => mine()?.row.key === row.key;
-  // this row is where the focused selection, in a window below, was
-  // inherited from
-  const isOrigin = (row: EntryRow) => {
-    const sel = focusedSelection();
-    return (
-      sel !== undefined &&
-      sel.dir !== self &&
-      sel.row.owner === self &&
-      sel.row.key === row.key
-    );
+  // where the window is looking: the title bar spells it as a breadcrumb
+  const [at, setAt] = createSignal<string[]>([]);
+  const here = createMemo(() => {
+    const path = at();
+    return from(self.list(path), self.list(path).value);
+  });
+  const go = (path: string[]) => {
+    setAt(path);
+    select(self, undefined);
   };
-  // this row holds the same url as the focused selection, anywhere on the page
-  const isTwin = (row: EntryRow, value: unknown) => {
-    const url = focusedUrl();
-    return (
-      url !== undefined && value === url && !(isFocused() && isSelected(row))
-    );
+  // the picked name, when it is in the listing shown
+  const selected = () => {
+    const sel = mine();
+    if (!sel || sel.path.slice(0, -1).join("/") !== at().join("/")) return;
+    return sel.path[sel.path.length - 1];
+  };
+  // a name with names below it is walked into; a leaf is picked, and
+  // picked again is let go
+  const pick = (
+    path: string[],
+    handle: Handle<unknown> | undefined,
+    owner: Owner | undefined,
+    folder: boolean
+  ) => {
+    if (folder) return go(path);
+    if (selected() === path[path.length - 1]) return select(self, undefined);
+    select(self, { path, dir: self, probe, handle, from: owner });
   };
 
   props.registry.set(self, () => {
@@ -367,14 +395,14 @@ function Node(props: {
   });
   onCleanup(() => props.registry.delete(self));
 
-  // a selection that no longer exists — the entry went, or this directory
-  // closed — is dropped
+  // a place that no longer exists goes back to the top; a selection that
+  // no longer exists — the name went, or this directory closed — is dropped
   createEffect(() => {
+    const listing = here()();
+    if (at().length > 0 && listing.length === 0) return go([]);
     const sel = mine();
-    if (!sel) return;
-    const row = rows().find((r) => r.key === sel.row.key);
-    if (!row) select(self, undefined);
-    else if (row !== sel.row) select(self, { ...sel, row });
+    if (sel && !listing.includes(sel.path[sel.path.length - 1]))
+      select(self, undefined);
   });
   onCleanup(() => select(self, undefined));
 
@@ -409,9 +437,31 @@ function Node(props: {
             onPointerDown={() => setFocusedWindow(self)}
           >
             <div class="titlebar" title={self.name}>
-              <span class="window-title">{label(self.name)}</span>
+              <nav class="crumbs">
+                <button
+                  class="crumb"
+                  classList={{ current: at().length === 0 }}
+                  onClick={() => go([])}
+                >
+                  {label(self.name)}
+                </button>
+                <For each={at()}>
+                  {(name, i) => (
+                    <>
+                      <span class="crumb-sep">›</span>
+                      <button
+                        class="crumb"
+                        classList={{ current: i() === at().length - 1 }}
+                        onClick={() => go(at().slice(0, i() + 1))}
+                      >
+                        {name}
+                      </button>
+                    </>
+                  )}
+                </For>
+              </nav>
               <Show when={folded()}>
-                <span class="window-count">{rows().length} entries</span>
+                <span class="window-count">{names().length} names</span>
               </Show>
               <button
                 class="fold"
@@ -424,50 +474,19 @@ function Node(props: {
             </div>
             <Show when={!folded()}>
               <div class="window-body">
-                <div class="entries">
-                  <For each={rows()}>
-                    {(row) => {
-                      const value = from(row.handle, readValue(row.handle));
-                      return (
-                        <div
-                          class="tree-item"
-                          data-path={row.key}
-                          classList={{
-                            selected: isSelected(row),
-                            origin: isOrigin(row),
-                            twin: isTwin(row, value()),
-                            lit: isLit(row),
-                            inherited: row.inherited,
-                          }}
-                          title={
-                            row.inherited
-                              ? `from ${row.owner.name}`
-                              : `mounted here`
-                          }
-                          onClick={() =>
-                            select(self, { row, dir: self, probe })
-                          }
-                          onMouseEnter={(e) => setHoveredRow(e.currentTarget)}
-                          onMouseLeave={(e) =>
-                            setHoveredRow((r) =>
-                              r === e.currentTarget ? undefined : r
-                            )
-                          }
-                        >
-                          <FileIcon />
-                          <span class="tree-name">{row.path.join("/")}</span>
-                          <span class="tree-value">
-                            <Value
-                              handle={row.handle}
-                              path={row.path}
-                              probe={probe}
-                            />
-                          </span>
-                        </div>
-                      );
-                    }}
-                  </For>
-                </div>
+                <Show when={at()} keyed>
+                  {(path) => (
+                    <Listing
+                      self={self}
+                      probe={probe}
+                      path={path}
+                      selected={selected()}
+                      focused={isFocused()}
+                      procs={procs}
+                      pick={pick}
+                    />
+                  )}
+                </Show>
                 <Show when={mine()} keyed>
                   {(sel) => (
                     <Preview
@@ -514,6 +533,136 @@ function Node(props: {
         <div class="folder-children">{below()}</div>
       </div>
     </Show>
+  );
+}
+
+// the names a reader sees at `path`, each with where it came from and a
+// summary of what is there — resolved the way a read is, live; a name
+// that resolves to nothing yet (a URL not loaded) reads through the place,
+// opened once through the probe
+function Listing(props: {
+  self: Directory;
+  probe: Directory | undefined;
+  path: string[];
+  selected: string | undefined;
+  focused: boolean;
+  procs: Accessor<Process[]>;
+  pick: (
+    path: string[],
+    handle: Handle<unknown> | undefined,
+    owner: Owner | undefined,
+    folder: boolean
+  ) => void;
+}) {
+  const names = from(
+    props.self.list(props.path),
+    props.self.list(props.path).value
+  );
+  let held: Directory | undefined;
+  const [opened] = createResource(async () => {
+    if (props.path.length === 0)
+      return props.self as unknown as Handle<unknown>; // every directory reads as one
+    if (!props.probe) return undefined;
+    try {
+      return (held = await props.probe.open<unknown>(props.path));
+    } catch {
+      return undefined; // a name with nothing at it: the rows stand on their own
+    }
+  });
+  onCleanup(() => held?.close());
+
+  const isLit = (key: string) => {
+    const dep = hoveredDep();
+    return dep?.name === key && props.procs().some((p) => p.pid === dep.pid);
+  };
+  // this row is where the focused selection, in another window, was
+  // inherited from
+  const isOrigin = (key: string) => {
+    const sel = focusedSelection();
+    return (
+      sel !== undefined &&
+      sel.dir !== props.self &&
+      sel.from?.owner === props.self &&
+      sel.from.ownerPath.join("/") === key
+    );
+  };
+  // this row holds the same url as the focused selection, anywhere on the page
+  const isTwin = (name: string, value: unknown) => {
+    const url = focusedUrl();
+    return (
+      url !== undefined &&
+      value === url &&
+      !(props.focused && props.selected === name)
+    );
+  };
+
+  return (
+    <div class="entries">
+      <For each={names()}>
+        {(name) => {
+          const path = [...props.path, name];
+          const key = path.join("/");
+          const resolved = from(
+            props.self.resolve(path),
+            props.self.resolve(path).value
+          );
+          const owner = createMemo(() => ownerOf(props.self, resolved()));
+          const handle = () =>
+            resolved()?.handle ??
+            (opened() ? field<unknown>(opened()!, [name]) : undefined);
+          const [value, setValue] = createSignal<unknown>();
+          createEffect(() => {
+            const h = handle();
+            if (!h) return setValue(undefined);
+            const unsub = h.subscribe((v) => setValue(() => v));
+            onCleanup(unsub);
+          });
+          const below = from(
+            props.self.list(path),
+            props.self.list(path).value
+          );
+          return (
+            <div
+              class="tree-item"
+              data-path={key}
+              classList={{
+                selected: props.selected === name,
+                origin: isOrigin(key),
+                twin: isTwin(name, value()),
+                lit: isLit(key),
+                inherited: owner()?.inherited ?? false,
+                folder: below().length > 0,
+              }}
+              title={
+                owner()
+                  ? owner()!.inherited
+                    ? `from ${owner()!.owner.name}`
+                    : "mounted here"
+                  : "a field"
+              }
+              onClick={() =>
+                props.pick(path, handle(), owner(), below().length > 0)
+              }
+              onMouseEnter={(e) => setHoveredRow(e.currentTarget)}
+              onMouseLeave={(e) =>
+                setHoveredRow((r) => (r === e.currentTarget ? undefined : r))
+              }
+            >
+              <Show when={below().length > 0} fallback={<FileIcon />}>
+                <FolderIcon open={false} />
+              </Show>
+              <span class="tree-name">{name}</span>
+              <span class="tree-value">
+                <Summary value={value()} />
+              </span>
+              <Show when={below().length > 0}>
+                <span class="tree-more">›</span>
+              </Show>
+            </div>
+          );
+        }}
+      </For>
+    </div>
   );
 }
 
@@ -778,27 +927,27 @@ function hook(start: Point, trunk: number, end: Point): string {
   ].join(" ");
 }
 
-// the selected entry in full: where it came from, and its value — a link
-// as the document it points at, an element as its DOM tree, the rest raw
+// a picked leaf in full: where it came from, and its value — a link as the
+// document it points at, an element as its DOM tree, the rest raw
 function Preview(props: {
   selection: Selection;
   reveal: (dir: Directory) => void;
   close: () => void;
 }) {
-  const { row, probe } = props.selection;
+  const { path, probe, handle, from: owner } = props.selection;
   return (
     <div class="preview">
       <div class="preview-head">
         <FileIcon />
-        <code class="preview-path">{row.path.join("/")}</code>
-        <Show when={row.inherited}>
+        <code class="preview-path">{path[path.length - 1]}</code>
+        <Show when={owner?.inherited}>
           <span class="preview-where">
             from{" "}
             <button
               class="preview-from"
-              onClick={() => props.reveal(row.owner)}
+              onClick={() => props.reveal(owner!.owner)}
             >
-              {label(row.owner.name)}
+              {label(owner!.owner.name)}
             </button>
           </span>
         </Show>
@@ -809,7 +958,9 @@ function Preview(props: {
         </button>
       </div>
       <div class="preview-body">
-        <Value handle={row.handle} path={row.path} probe={probe} editor />
+        <Show when={handle} fallback={<i>—</i>}>
+          {(h) => <Value handle={h()} path={path} probe={probe} editor />}
+        </Show>
       </div>
     </div>
   );
@@ -960,6 +1111,10 @@ function summarize(v: unknown): JSX.Element {
       <code>{JSON.stringify(v)}</code>
     );
   if (typeof v === "function") return <code>fn</code>;
+  if (v instanceof Element) {
+    const cls = v.classList[0] ? `.${v.classList[0]}` : "";
+    return <code>{`<${v.tagName.toLowerCase()}${cls}>`}</code>;
+  }
   if (Array.isArray(v))
     return (
       <code>
@@ -1208,58 +1363,6 @@ function Highlight() {
 }
 
 // --- helpers ------------------------------------------------------------------
-
-// what a walk would find: inherited entries first, own after, nearest
-// overlay winning; URL-keyed fills are the plumbing, not the picture
-function createRows(chain: Directory[]): Accessor<EntryRow[]> {
-  const layers = [...chain]
-    .reverse()
-    .map((dir) => ({ dir, entries: from(dir.entries, dir.entries.value) }));
-  let cache = new Map<string, EntryRow>();
-  return createMemo(() => {
-    const next = new Map<string, EntryRow>();
-    const rows: EntryRow[] = [];
-    const seen = new Set<string>();
-    const cuts: string[][] = [];
-    layers.forEach(({ dir, entries }, depth) => {
-      for (const entry of entries()) {
-        if (hasScheme(entry.path[0])) continue;
-        const key = entry.path.join("/");
-        if (seen.has(key) || cuts.some((cut) => under(entry.path, cut)))
-          continue;
-        seen.add(key);
-        if (!entry.handle) {
-          cuts.push(entry.path);
-          continue;
-        }
-        const prev = cache.get(key);
-        const row: EntryRow =
-          prev && prev.handle === entry.handle && prev.owner === dir
-            ? prev
-            : {
-                key,
-                path: entry.path,
-                handle: entry.handle,
-                owner: dir,
-                inherited: depth > 0,
-              };
-        next.set(key, row);
-        rows.push(row);
-      }
-    });
-    cache = next;
-    return [
-      ...rows.filter((row) => row.inherited),
-      ...rows.filter((row) => !row.inherited),
-    ];
-  });
-}
-
-function under(path: string[], prefix: string[]): boolean {
-  return (
-    path.length >= prefix.length && prefix.every((name, i) => path[i] === name)
-  );
-}
 
 function tryFork(dir: Directory): Directory | undefined {
   try {

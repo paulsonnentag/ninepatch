@@ -4,7 +4,7 @@ import type { CanvasDoc, Place, PlaceDoc } from "../../types";
 // watches the canvas document, follows every item's docUrl, and keeps
 // `places` mounted — anything with a title and coordinates is a place
 export default async function Places(dir: Directory) {
-  const canvas = await dir.open<CanvasDoc>("demo/canvas");
+  const canvas = await dir.open<CanvasDoc>("canvas");
   dir.mount("places", [] as Place[]);
   const places = await dir.open<Place[]>("places");
 

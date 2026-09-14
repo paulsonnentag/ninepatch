@@ -6,6 +6,7 @@ export {
   type Main,
   type Opened,
   type Process,
+  type Resolution,
   type Root,
   type Server,
 } from "./directory";
