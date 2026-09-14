@@ -1,79 +1,26 @@
 import { For, from, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
-import type { Directory, Opened } from "@ninepatch/core";
-import type {
-  LocalPointer,
-  Shape,
-  Stroke,
-  SurfaceDoc,
-  Tool,
-} from "../../types";
-import { near, within } from "./geometry";
+import type { Directory, Handle, Opened } from "@ninepatch/core";
+import type { LocalPointer, Shape, SurfaceDoc } from "../../types";
 
-const line = "./demos/whiteboard/line.tsx";
-
-// What makes a component a surface. It reads `surface` — a directory: the
-// document of shapes, with `dom` to draw in and `pointer` in its units
-// mounted onto it — and places every shape in it as a component of its
-// own: a fork with the wrapper as `dom`, the record as `document`, opened
-// through `surface` so whatever the shape mounts onto it lands on the
-// surface at `shapes/<id>/…`, and the surface itself as `parent`. While
-// the pointer is down on it, it draws with the `tool` selected at the top
-// — unless a shape that is itself a surface is under the pointer; that
-// one draws.
-export async function surface(dir: Directory): Promise<void> {
-  const doc = await dir.open<SurfaceDoc>("surface");
-  const layer = (await dir.open<HTMLElement>("surface/dom")).value;
-  const pointer = await dir.open<LocalPointer>("surface/pointer");
-  const tool = await dir.open<Tool>("tool");
-
-  const children = new Map<string, Directory>();
-  // a shape that mounted a `surface` of its own takes the pointer over it
-  const covered = (p: { x: number; y: number }) =>
-    Object.entries(doc.value.shapes).some(
-      ([id, s]) =>
-        within(s.outline, p.x - s.x, p.y - s.y) &&
-        children
-          .get(id)
-          ?.entries.value.some(
-            (e) => e.handle && e.path.join("/") === "surface"
-          )
-    );
-
-  let stroke: { id: string; x: number; y: number } | undefined;
-  const unsubscribe = pointer.subscribe((p) => {
-    const t = tool.value;
-    if (!p?.down || !t || covered(p)) return void (stroke = undefined);
-    if (t.kind === "eraser") {
-      const hits = Object.entries(doc.value.shapes)
-        .filter(
-          ([, s]) =>
-            s.componentUrl === line &&
-            near(s.outline, p.x - s.x, p.y - s.y, t.width)
-        )
-        .map(([id]) => id);
-      if (hits.length)
-        doc.change((d) => {
-          for (const id of hits) delete d.shapes[id];
-        });
-    } else if (!stroke) {
-      stroke = { id: crypto.randomUUID(), x: p.x, y: p.y };
-      const fresh: Stroke = {
-        componentUrl: line,
-        x: p.x,
-        y: p.y,
-        outline: [0, 0],
-        color: t.color,
-        width: t.width,
-      };
-      doc.change((d) => (d.shapes[stroke!.id] = fresh));
-    } else {
-      const { id, x, y } = stroke;
-      doc.change((d) =>
-        d.shapes[id]?.outline.push(round(p.x - x), round(p.y - y))
-      );
-    }
-  });
+// What makes a component a surface. Given its record and the pointer in
+// its units and its screen scale, it mounts those two onto the record and
+// binds the record as `surface` — a purely logical thing: what is on it,
+// where the pointer is, how big a unit is. Then it places every shape in
+// the record as a component of its own, in `layer`: a fork with the
+// wrapper as `dom`, the record as `document`, opened through `surface` so
+// whatever the shape mounts onto it lands on the surface at
+// `shapes/<id>/…`, and the surface itself as `parent`. It draws nothing;
+// the pens do.
+export async function surface(
+  dir: Directory,
+  doc: Opened<SurfaceDoc>,
+  layer: HTMLElement,
+  self: { pointer: Handle<LocalPointer>; scale: Handle<number> | number }
+): Promise<void> {
+  doc.mount("pointer", self.pointer);
+  doc.mount("scale", self.scale);
+  dir.mount("surface", doc);
 
   const dispose = render(() => {
     const state = from(doc, doc.value);
@@ -91,7 +38,6 @@ export async function surface(dir: Directory): Promise<void> {
           ) as HTMLDivElement;
 
           const child = dir.fork(id);
-          children.set(id, child);
           child.mount("dom", el);
           child.mount("id", id);
           child.mount("parent", doc);
@@ -111,7 +57,6 @@ export async function surface(dir: Directory): Promise<void> {
             if (!child.signal.aborted) el.textContent = String(e);
           });
           onCleanup(() => {
-            children.delete(id);
             child.close();
             own?.close();
           });
@@ -121,14 +66,7 @@ export async function surface(dir: Directory): Promise<void> {
     );
   }, layer);
 
-  dir.signal.addEventListener("abort", () => {
-    dispose();
-    unsubscribe();
-  });
-}
-
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
+  dir.signal.addEventListener("abort", dispose);
 }
 
 function componentName(url: string): string {

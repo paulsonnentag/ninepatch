@@ -605,19 +605,25 @@ places.fork("Map").spawn("Map", import.meta.resolve("./map.tsx"))       // opens
 
 The root has a `pointer` — a recorder writes it, in the board's pixels
 — and nothing else. Below it, the canvas is a component that makes its
-document a *surface*: a directory, with `dom` and the pointer in its
-units mounted onto it, and bound as `surface`. Every shape in it is
-placed as a component of its own — a fork with the wrapper as `dom`, the
-record as `document`, and the surface as `parent`. The map is one of
-those shapes and a surface in turn: it mounts its layer, the pointer in
-map units and its `parent` onto its own record, and binds that as
-`surface` for the lines below it. From a shape on the map `parent` is
-the map, and the map's `parent` is the canvas: the chain leads back up,
-level by level. The tools are shapes too. Clicking a pen sets `tool`,
-one name at the top; whichever surface the pointer is down on draws with
-it in its own units — and a surface leaves the pointer alone while a
-shape that mounted a `surface` of its own is under it, so the map takes
-the ink when the pointer is over the map.
+document a *surface*: a purely logical thing — the shapes in the record,
+and mounted onto the record the `pointer` in the surface's units and the
+`scale` of one of those units on screen — bound as `surface`. Nothing
+visual is on it; where the shapes are drawn is the component's business.
+Every shape in it is placed as a component of its own — a fork with the
+wrapper as `dom`, the record as `document`, and the surface as `parent`.
+The map is one of those shapes and a surface in turn: it mounts the
+pointer in map units, its zoom (times the scale below) as `scale`, and
+its `parent` onto its own record, and binds that as `surface` for the
+lines below it. From a shape on the map `parent` is the map, and the
+map's `parent` is the canvas: the chain leads back up, level by level. A
+surface draws nothing. The tools are shapes, and they do the drawing:
+clicking a pen sets `tool`, one name at the top, so the other pens let
+go and the map holds still; while the pointer is down the pen follows
+`parent` *down* — a shape under the pointer that publishes a `pointer`
+of its own is a surface, and its pointer is already in its units — and
+writes a line into the deepest surface's document, its width divided by
+that surface's scale, so the ink is the pen's width on screen as it is
+drawn, however far in the map is zoomed.
 
 ```ts
 // the host: a pointer, and below it a canvas
@@ -626,28 +632,22 @@ root.mount("dom", board)
 await root.spawn("Input", "./input.ts").terminated       // mounts `pointer`: x, y, down, in the board's pixels
 const canvas = root.fork("canvas")
 canvas.mount("document", seed.whiteboard)                // a link: the canvas document
-canvas.mount("tool", null)                               // the selected pen, for every surface below
+canvas.mount("tool", null)                               // the selected pen's id, for every tool and surface below
 canvas.spawn("Canvas", "./canvas.tsx")
 
-// canvas.tsx — a flat surface, in its own pixels
+// canvas.tsx — a flat surface, in its own pixels: a unit is a pixel
 export default async function Canvas(dir: Directory) {
   const doc = await dir.open<SurfaceDoc>("document")
-  doc.mount("dom", (await dir.open<HTMLElement>("dom")).value)
-  doc.mount("pointer", await dir.open<LocalPointer>("pointer"))
-  dir.mount("surface", doc)                              // the document, as a directory: what is on it, and where
-  await surface(dir)
+  const dom = await dir.open<HTMLElement>("dom")
+  const pointer = await dir.open<LocalPointer>("pointer")
+  await surface(dir, doc, dom.value, { pointer, scale: 1 })
 }
 
-// surface.tsx — what makes a component a surface
-export async function surface(dir: Directory) {
-  const doc = await dir.open<SurfaceDoc>("surface")
-  const layer = (await dir.open<HTMLElement>("surface/dom")).value
-  const pointer = await dir.open<LocalPointer>("surface/pointer")
-  const tool = await dir.open<Tool>("tool")              // inherited from the top
-  pointer.subscribe((p) => {
-    if (!p?.down || !tool.value || covered(p)) return    // covered: a shape with a `surface` of its own is under the pointer
-    draw(doc, tool.value, p)                             // a new line, more points on it, or lines removed
-  })
+// surface.tsx — what makes a component a surface: the two names, the bind, the placing
+export async function surface(dir, doc, layer, self: { pointer, scale }) {
+  doc.mount("pointer", self.pointer)                     // onto the record: the surface is the document, as a directory
+  doc.mount("scale", self.scale)
+  dir.mount("surface", doc)
   for (const id of Object.keys(doc.value.shapes)) {
     const child = dir.fork(id)
     child.mount("dom", layer.appendChild(wrapperAt(doc.value.shapes[id])))
@@ -663,20 +663,46 @@ export async function surface(dir: Directory) {
 export default async function MapSurface(dir: Directory) {
   const shape = await dir.open<MapShape>("document")
   const outer = await dir.open<LocalPointer>("parent/pointer")   // the surface below's pointer, in its units
+  const outerScale = await dir.open<number>("parent/scale")
   const layer = …                                          // inside dir.open("dom"), transformed with the projection
-  shape.mount("dom", layer)                                // onto my record — the canvas sees it at surface/shapes/map/dom
-  shape.mount("parent", await dir.open("parent"))
-  shape.mount("pointer", derive(outer, (p) => p && toMapUnits(minus(p, shape.value))))
-  dir.mount("surface", shape)                              // over the inherited one: from here down, I am the surface
-  await surface(dir)
+  const zoom = wrap(1); map.on("move", () => zoom.set(2 ** (map.getZoom() - origin.zoom)))
+  shape.mount("parent", await dir.open("parent"))          // onto my record — the canvas sees it at surface/shapes/map/parent
+  await surface(dir, shape, layer, {
+    pointer: derive(outer, (p) => p && toMapUnits(minus(p, shape.value))),
+    scale: derive(zoom, (k) => k * outerScale.value),      // a map unit on screen
+  })
 }
 
-// pen.tsx — a shape that is a tool
+// pen.tsx — a shape that draws, on whatever surface is under the pointer
 export default async function Pen(dir: Directory) {
   const doc = await dir.open<Stroke>("document")
   const id = (await dir.open<string>("id")).value
   const tool = await dir.open<Tool>("tool")
-  button.onclick = () => tool.set(tool.value?.id === id ? null : { id, kind: "pen", ...doc.value })
+  const pointer = await dir.open<LocalPointer>("parent/pointer")
+  button.onclick = () => tool.set(tool.value === id ? null : id)
+  pointer.subscribe(async (p) => {
+    if (tool.value !== id || !p?.down) return lift()
+    if (stroke) return extend(stroke)                      // more points, read from the target's own pointer
+    const target = await surfaceUnder(dir, ["parent"], p)  // the deepest surface under p: its doc, pointer and scale
+    stroke = begin(target, { ...doc.value, width: doc.value.width / target.scale.value })
+  })
+}
+
+// tools.ts — down the tree, a level at a time
+async function surfaceUnder(dir, path, p) {
+  const doc = await dir.open<SurfaceDoc>(path)
+  for (const [id, s] of Object.entries(doc.value.shapes)) {
+    if (!within(s.outline, p.x - s.x, p.y - s.y)) continue
+    const below = [...path, "shapes", id]
+    if (!dir.list(below).value.includes("pointer")) continue   // a shape with a pointer of its own is a surface
+    const q = (await dir.open<LocalPointer>([...below, "pointer"])).value
+    if (q) return surfaceUnder(dir, below, q)              // already in that surface's units
+  }
+  return {
+    doc,
+    pointer: await dir.open<LocalPointer>([...path, "pointer"]),
+    scale: await dir.open<number>([...path, "scale"]),
+  }
 }
 ```
 
@@ -685,19 +711,21 @@ resolves, and a path into a plain value stops at the value — there is
 no table there to land in. A document is a directory, so `pointer`
 mounted onto the map's record through `document` resolves through the
 child's `surface` bind to the canvas's document and lands in its URL
-area at `shapes/map/pointer`, where the canvas, the host and the
-inspector all read it. That is also why the child's `document` is opened
-through `surface`, not from the surface's own `doc` view: the two spell
-different paths to the same record, and only the one through the bind
-canonicalises to the shared table.
+area at `shapes/map/pointer`, where the canvas, the pen, the host and
+the inspector all read it. That is also why the child's `document` is
+opened through `surface`, not from the surface's own `doc` view: the two
+spell different paths to the same record, and only the one through the
+bind canonicalises to the shared table. And it is why the pen needs no
+knowledge of maps: a surface is anything with `shapes`, a `pointer` and
+a `scale`, found by listing.
 
 From the host:
 
 ```ts
 root.list().value                                                 // ["dom", "pointer"]
 canvas.list().value                                               // ["dom", "pointer", "document", "tool", "surface"]
-canvas.list("surface").value                                      // ["shapes", "dom", "pointer"]
-canvas.list(["surface", "shapes", "map"]).value                   // ["componentUrl", "x", "y", …, "dom", "parent", "pointer"]
+canvas.list("surface").value                                      // ["shapes", "pointer", "scale"]
+canvas.list(["surface", "shapes", "map"]).value                   // ["componentUrl", "x", "y", …, "parent", "pointer", "scale"]
 (await canvas.open<LocalPointer>("surface/shapes/map/pointer")).value   // the pointer, in map units
 ```
 

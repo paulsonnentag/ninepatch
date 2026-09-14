@@ -33,11 +33,12 @@ export type MapShape = Shape &
     origin: { lng: number; lat: number; zoom: number }; // local units: pixels at this zoom, from this point
   };
 export type LocalPointer = { x: number; y: number; down: boolean } | null; // in the units of whoever mounted it
-// the selected tool — one for the whole board, whichever surface is drawn on
-export type Tool =
-  | { id: string; kind: "pen"; color: string; width: number }
-  | { id: string; kind: "eraser"; width: number }
-  | null;
+// what a surface is, to the shapes on it and the tools above: its record's
+// shapes, and on the record the pointer in its units and how many screen
+// pixels one of those units is
+export type Surface = { pointer: LocalPointer; scale: number };
+// the id of the selected tool shape — one for the whole board; the tool itself does the drawing
+export type Tool = string | null;
 
 export type Cell = {
   ch: string;
