@@ -351,6 +351,9 @@ is distinguishable from a bug.
 - A path is a URL when its first name has a scheme. `automerge:x…` names a
   document; `automerge:x…/a/b` walks into it. `#heads` is the server's
   business (a pinned, read-only view).
+- `//` right after a scheme is dropped: `https://host/index.xml` reads as
+  `https:host/index.xml`, two names — the host, then a walk below it. A
+  field holding either spelling is a link.
 - Folder documents are `Record<name, url>`; a folder entry is an ordinary
   URL-valued field. Folder metadata is ignored.
 

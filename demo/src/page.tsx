@@ -1,9 +1,9 @@
-import { TodosDemo } from "./demos/todos";
-import { TerminalDemo } from "./demos/terminal";
 import { ChatDemo } from "./demos/chat";
 import { CanvasDemo } from "./demos/canvas";
+import { FrameDemo } from "./demos/frame";
 import { WhiteboardDemo } from "./demos/whiteboard";
-import { BrowserDemo } from "./demos/browser";
+import { FeedsDemo } from "./demos/feeds";
+import { TodosDemo } from "./demos/todos";
 
 export function Page() {
   return (
@@ -19,12 +19,12 @@ export function Page() {
         </p>
       </header>
 
-      <TodosDemo />
-      <TerminalDemo />
       <ChatDemo />
       <CanvasDemo />
+      <FrameDemo />
       <WhiteboardDemo />
-      <BrowserDemo />
+      <FeedsDemo />
+      <TodosDemo />
     </>
   );
 }

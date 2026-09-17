@@ -8,7 +8,9 @@ import type {
   ChatDoc,
   ContactDoc,
   Folder,
+  LikesDoc,
   EraserShape,
+  MapDoc,
   MapShape,
   MarkdownDoc,
   PlaceDoc,
@@ -115,6 +117,11 @@ async function findOrCreateSeed(): Promise<Seed> {
     });
     folder.change((d) => (d.whiteboard = whiteboard.url));
   }
+  if (!folder.doc().likes) {
+    // seeded before the feeds section existed
+    const likes = repo.create<LikesDoc>({ items: {} });
+    folder.change((d) => (d.likes = likes.url));
+  }
   const docs = folder.doc();
   const whiteboard = await repo.find<SurfaceDoc>(
     docs.whiteboard as AnyDocumentId
@@ -142,9 +149,7 @@ async function findOrCreateSeed(): Promise<Seed> {
   if (!canvas.doc().items) {
     // seeded before items carried componentUrl/docUrl: each card becomes
     // its own document, the canvas keeps only the wiring
-    const items: Record<string, CanvasItem> = {
-      map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
-    };
+    const items: Record<string, CanvasItem> = { map: mapItem(210, 16) };
     for (const [id, card] of Object.entries(canvas.doc().cards ?? {})) {
       const doc =
         card.lat !== undefined && card.lng !== undefined
@@ -172,6 +177,13 @@ async function findOrCreateSeed(): Promise<Seed> {
         );
     });
   }
+  if (items.some((it) => !it.docUrl)) {
+    // seeded before the map had a document of its own to be selected by
+    canvas.change((d) => {
+      for (const it of Object.values(d.items))
+        if (!it.docUrl) it.docUrl = repo.create<MapDoc>(mapDoc()).url;
+    });
+  }
   const notes = await repo.find<MarkdownDoc>(docs.notes as AnyDocumentId);
   if (!notes.doc().content.includes("/automerge:")) {
     // seeded before the notes linked to each other
@@ -193,6 +205,7 @@ async function findOrCreateSeed(): Promise<Seed> {
     notes2: docs.notes2,
     alice: docs.alice,
     bob: docs.bob,
+    likes: docs.likes,
   };
 }
 
@@ -225,12 +238,22 @@ export function seedChatMessages(): ChatDoc["messages"] {
 export function seedCanvasItems(): Record<string, CanvasItem> {
   return {
     berlin: placeItem(
-      repo.create<PlaceDoc>({ title: "Berlin", lat: 52.5, lng: 13.4 }).url,
+      repo.create<PlaceDoc>({
+        title: "Berlin",
+        lat: 52.5,
+        lng: 13.4,
+        color: "#e11d48",
+      }).url,
       24,
       20
     ),
     tokyo: placeItem(
-      repo.create<PlaceDoc>({ title: "Tokyo", lat: 35.7, lng: 139.7 }).url,
+      repo.create<PlaceDoc>({
+        title: "Tokyo",
+        lat: 35.7,
+        lng: 139.7,
+        color: "#2563eb",
+      }).url,
       56,
       130
     ),
@@ -239,12 +262,27 @@ export function seedCanvasItems(): Record<string, CanvasItem> {
       96,
       240
     ),
-    map: { componentUrl: "./demos/canvas/map.tsx", x: 210, y: 16 },
+    map: mapItem(210, 16),
   };
 }
 
 function placeItem(docUrl: string, x: number, y: number): CanvasItem {
   return { componentUrl: "./demos/canvas/place.tsx", docUrl, x, y };
+}
+
+// the map keeps its view in a document of its own, so it is an item like
+// any other: selectable by URL
+function mapItem(x: number, y: number): CanvasItem {
+  return {
+    componentUrl: "./demos/canvas/map.tsx",
+    docUrl: repo.create<MapDoc>(mapDoc()).url,
+    x,
+    y,
+  };
+}
+
+function mapDoc(): MapDoc {
+  return { center: { lng: 13.388, lat: 52.517 }, zoom: 9.5 };
 }
 
 // The whiteboard is a canvas whose shapes include its own tools — pens and

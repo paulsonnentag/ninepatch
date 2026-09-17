@@ -6,26 +6,50 @@ import type { CanvasDoc } from "../../types";
 export default async function Canvas(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const doc = await dir.open<CanvasDoc>("document");
-  const selection = await dir.open<string | null>("selection");
+  const selection = await dir.open<string[]>("selection"); // the selected items' document URLs
 
   const dispose = render(() => {
     const state = from(doc, doc.value);
     const selected = from(selection, selection.value);
+    const urlOf = (id: string) => state().items[id]?.docUrl;
+    const isSelected = (id: string) => {
+      const url = urlOf(id);
+      return !!url && selected().includes(url);
+    };
+
+    const select = (id: string, shift: boolean) => {
+      const url = urlOf(id);
+      if (!url) return;
+      const current = selection.value;
+      if (shift)
+        selection.set(
+          current.includes(url)
+            ? current.filter((u) => u !== url)
+            : [...current, url]
+        );
+      else if (!current.includes(url)) selection.set([url]);
+    };
 
     const drag = (down: PointerEvent, id: string) => {
       const target = down.target as HTMLElement;
       if (["INPUT", "BUTTON", "CANVAS", "A"].includes(target.tagName)) return;
-      selection.set(id);
-      const start = state().items[id];
-      if (!start) return;
-      const dx = down.clientX - start.x;
-      const dy = down.clientY - start.y;
+      select(id, down.shiftKey);
+      if (down.shiftKey) return; // shift only toggles
+      // the whole selection moves together
+      const starts = new Map<string, { x: number; y: number }>();
+      for (const [key, item] of Object.entries(state().items))
+        if (
+          key === id ||
+          (item.docUrl && selection.value.includes(item.docUrl))
+        )
+          starts.set(key, { x: item.x, y: item.y });
       const move = (e: PointerEvent) =>
         doc.change((d) => {
-          const it = d.items[id];
-          if (it) {
-            it.x = Math.max(0, e.clientX - dx);
-            it.y = Math.max(0, e.clientY - dy);
+          for (const [key, start] of starts) {
+            const it = d.items[key];
+            if (!it) continue;
+            it.x = Math.max(0, start.x + e.clientX - down.clientX);
+            it.y = Math.max(0, start.y + e.clientY - down.clientY);
           }
         });
       const up = () => {
@@ -41,14 +65,17 @@ export default async function Canvas(dir: Directory) {
         class="board"
         tabIndex={0} // focusable, so backspace can reach it
         onPointerDown={(e) => {
-          if (e.target === e.currentTarget) selection.set(null); // beside the items: clear
+          if (e.target === e.currentTarget) selection.set([]); // beside the items: clear
         }}
         onKeyDown={(e) => {
           if (e.key !== "Backspace" || e.target !== e.currentTarget) return;
-          const id = selected();
-          if (!id) return;
-          doc.change((d) => delete d.items[id]);
-          selection.set(null);
+          const urls = selected();
+          if (urls.length === 0) return;
+          doc.change((d) => {
+            for (const [id, item] of Object.entries(d.items))
+              if (item.docUrl && urls.includes(item.docUrl)) delete d.items[id];
+          });
+          selection.set([]);
         }}
       >
         <For each={Object.keys(state().items)}>
@@ -57,7 +84,7 @@ export default async function Canvas(dir: Directory) {
             const el = (
               <div
                 class="item"
-                classList={{ selected: selected() === id }}
+                classList={{ selected: isSelected(id) }}
                 style={{
                   left: `${item()?.x ?? 0}px`,
                   top: `${item()?.y ?? 0}px`,

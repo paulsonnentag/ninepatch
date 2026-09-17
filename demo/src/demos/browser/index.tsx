@@ -17,14 +17,6 @@ export function BrowserDemo() {
         { name: "urlbar.tsx", code: urlbarSource },
         { name: "markdown.tsx", code: markdownSource },
       ]}
-      prose={
-        <p>
-          A <code>Route</code> process keeps the part after the host in the
-          directory as <code>url</code> and mounts <code>document</code> as a
-          two-way lens over it, so the bar only ever writes the url, the editor
-          only ever rebinds the doc, and each follows the other.
-        </p>
-      }
     >
       <div class="browser">
         <div class="browser-chrome">

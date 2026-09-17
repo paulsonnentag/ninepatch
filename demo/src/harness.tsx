@@ -10,6 +10,7 @@ import {
   ErrorBoundary,
   For,
   from,
+  mapArray,
   onCleanup,
   onMount,
   Show,
@@ -47,7 +48,7 @@ export function createComponent<
   const fallback = componentName(url);
   return function Component(props: Props & { dir: Directory; name?: string }) {
     const [own, mounts] = splitProps(props, ["dir", "name"]);
-    const dir = own.dir.fork(own.name ?? fallback);
+    const dir = own.dir.fork(own.name ?? fallback.toLowerCase()); // directories are lower case
     const el = (<div class="tool" />) as HTMLDivElement;
     for (const [entry, value] of Object.entries(mounts))
       dir.mount(entry, value);
@@ -70,10 +71,9 @@ function componentName(url: string): string {
   return base[0].toUpperCase() + base.slice(1); // chat.tsx runs as "Chat"
 }
 
-// a section: title and prose, then a band — preview | data | code
+// a section: a title, then a band — preview | data | code
 export function Section(props: {
   title: string;
-  prose: JSX.Element;
   sources: Source[];
   /** The section's directory, last, after everything it was forked from. */
   chain: Directory[];
@@ -114,16 +114,15 @@ export function Section(props: {
   };
 
   return (
-    <section>
-      <h2>
+    <section class="demo">
+      <h3 class="demo-title">
         {props.title}
         <Show when={props.reset}>
           <button class="reset" onClick={() => props.reset!()}>
             reset
           </button>
         </Show>
-      </h2>
-      <div class="prose">{props.prose}</div>
+      </h3>
       <div
         class="panels"
         ref={band}
@@ -376,6 +375,17 @@ function Node(props: {
     if (!sel || sel.path.slice(0, -1).join("/") !== at().join("/")) return;
     return sel.path[sel.path.length - 1];
   };
+  // the url of where the window is looking, if it has one: a document
+  // reached through a link lands in an entry keyed by its url
+  const hereUrl = createMemo((): Accessor<string | undefined> => {
+    const path = at();
+    if (path.length === 0) return () => undefined;
+    const landed = from(self.resolve(path), self.resolve(path).value);
+    return () => {
+      const own = landed()?.ownerPath;
+      return own && hasScheme(own[0]) ? urlOf(own) : undefined;
+    };
+  });
   // a name with names below it is walked into; a leaf is picked, and
   // picked again is let go
   const pick = (
@@ -437,29 +447,7 @@ function Node(props: {
             onPointerDown={() => setFocusedWindow(self)}
           >
             <div class="titlebar" title={self.name}>
-              <nav class="crumbs">
-                <button
-                  class="crumb"
-                  classList={{ current: at().length === 0 }}
-                  onClick={() => go([])}
-                >
-                  {label(self.name)}
-                </button>
-                <For each={at()}>
-                  {(name, i) => (
-                    <>
-                      <span class="crumb-sep">›</span>
-                      <button
-                        class="crumb"
-                        classList={{ current: i() === at().length - 1 }}
-                        onClick={() => go(at().slice(0, i() + 1))}
-                      >
-                        {name}
-                      </button>
-                    </>
-                  )}
-                </For>
-              </nav>
+              <span class="window-title">{label(self.name)}</span>
               <Show when={folded()}>
                 <span class="window-count">{names().length} names</span>
               </Show>
@@ -473,6 +461,39 @@ function Node(props: {
               </button>
             </div>
             <Show when={!folded()}>
+              <div class="crumbbar">
+                <nav class="crumbs">
+                  <button
+                    class="crumb"
+                    classList={{ current: at().length === 0 }}
+                    title="the top"
+                    onClick={() => go([])}
+                  >
+                    .
+                  </button>
+                  <For each={at()}>
+                    {(name, i) => (
+                      <>
+                        <span class="crumb-sep">›</span>
+                        <button
+                          class="crumb"
+                          classList={{ current: i() === at().length - 1 }}
+                          onClick={() => go(at().slice(0, i() + 1))}
+                        >
+                          {name}
+                        </button>
+                      </>
+                    )}
+                  </For>
+                </nav>
+                <Show when={hereUrl()()}>
+                  {(url) => (
+                    <span class="crumb-url" title={url()}>
+                      {url()}
+                    </span>
+                  )}
+                </Show>
+              </div>
               <div class="window-body">
                 <Show when={at()} keyed>
                   {(path) => (
@@ -596,17 +617,28 @@ function Listing(props: {
     );
   };
 
+  // inherited entries first, then the ones mounted here, each alphabetical
+  const rows = mapArray(names, (name) => {
+    const path = [...props.path, name];
+    const resolved = from(
+      props.self.resolve(path),
+      props.self.resolve(path).value
+    );
+    const owner = createMemo(() => ownerOf(props.self, resolved()));
+    return { name, path, key: path.join("/"), resolved, owner };
+  });
+  const sorted = createMemo(() =>
+    [...rows()].sort(
+      (a, b) =>
+        Number(b.owner()?.inherited ?? false) -
+          Number(a.owner()?.inherited ?? false) || a.name.localeCompare(b.name)
+    )
+  );
+
   return (
     <div class="entries">
-      <For each={names()}>
-        {(name) => {
-          const path = [...props.path, name];
-          const key = path.join("/");
-          const resolved = from(
-            props.self.resolve(path),
-            props.self.resolve(path).value
-          );
-          const owner = createMemo(() => ownerOf(props.self, resolved()));
+      <For each={sorted()}>
+        {({ name, path, key, resolved, owner }) => {
           const handle = () =>
             resolved()?.handle ??
             (opened() ? field<unknown>(opened()!, [name]) : undefined);
@@ -1382,6 +1414,13 @@ function readValue(handle: Handle<unknown>): unknown {
 
 function label(name: string): string {
   return name.split("/").map(shorten).join("/");
+}
+
+// a URL-rooted path back as a URL: `https:host` + `index.xml` is
+// `https://host/index.xml`; an automerge URL is its one name
+function urlOf([head, ...rest]: readonly string[]): string {
+  const host = /^https?:/.test(head) ? head.replace(":", "://") : head;
+  return rest.length === 0 ? host : `${host}/${rest.join("/")}`;
 }
 
 // `automerge:4NMNnkMh…` — a URL keeps its scheme and a few id characters
