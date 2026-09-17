@@ -74,9 +74,13 @@ export function Section(props: {
   chain: Directory[];
   /** Puts the demo's documents back in their seeded state. */
   reset?: () => void;
+  /** Preview and inspector, in fractions; 1:2 by default. */
+  widths?: [number, number];
+  /** `false` leaves the inspector out: the preview alone, full width. */
+  inspector?: boolean;
   children: JSX.Element;
 }) {
-  const [widths, setWidths] = createSignal([1, 2]);
+  const [widths, setWidths] = createSignal<number[]>(props.widths ?? [1, 2]);
   let band!: HTMLDivElement;
 
   // a divider drag moves width between its neighbours, in fractions
@@ -120,6 +124,7 @@ export function Section(props: {
       </h3>
       <div
         class="panels"
+        classList={{ solo: props.inspector === false }}
         ref={band}
         style={{
           "--columns": widths()
@@ -131,13 +136,15 @@ export function Section(props: {
           <h3>preview</h3>
           <div class="panel-body live">{props.children}</div>
         </div>
-        <div class="divider" onPointerDown={[drag, 0]} />
-        <div class="panel context">
-          <h3>inspector</h3>
-          <div class="panel-body">
-            <Windows chain={props.chain} />
+        <Show when={props.inspector !== false}>
+          <div class="divider" onPointerDown={[drag, 0]} />
+          <div class="panel context">
+            <h3>inspector</h3>
+            <div class="panel-body">
+              <Windows chain={props.chain} />
+            </div>
           </div>
-        </div>
+        </Show>
       </div>
     </section>
   );

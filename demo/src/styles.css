@@ -75,6 +75,17 @@ pre {
   position: relative;
 }
 
+/* a section without the inspector: the preview alone, as tall as it is */
+.panels.solo {
+  grid-template-columns: minmax(0, 1fr);
+  resize: none;
+  overflow: visible;
+}
+
+.panels.solo .panel.example .panel-body {
+  position: static;
+}
+
 .panel.example .panel-body {
   position: absolute;
   top: 1.55rem; /* the label row */
@@ -2036,4 +2047,356 @@ button {
 
 button:hover {
   background: #f0f0f0;
+}
+
+/* the views example: the layout as a window manager beside the workspace
+   folder, and below them the same layout running a frame */
+.views {
+  display: grid;
+  grid-template-columns: minmax(340px, 3fr) minmax(280px, 2fr);
+  gap: 1rem 1.5rem;
+  align-items: start;
+  max-width: 1100px;
+}
+
+.views-pane h4,
+.views-reuse h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.views-reuse {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+}
+
+/* in the frame's main area the board fills it, like any manager */
+.frame-main .wm {
+  flex: 1;
+  height: auto;
+  border: none;
+  border-radius: 0;
+}
+
+/* the window manager: a board of windows the layout document places */
+.wm {
+  position: relative;
+  height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, #f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(#f0f0f0 1px, transparent 1px) 0 0 / 24px 24px,
+    white;
+  overflow: auto;
+  touch-action: none;
+}
+
+.win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid #cfcfd4;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  z-index: 1;
+}
+
+.win.front {
+  z-index: 2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+}
+
+.win-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.5rem;
+  background: linear-gradient(#f4f4f6, #e9e9ec);
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  user-select: none;
+  font-size: 0.75rem;
+}
+
+.win-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--faint);
+}
+
+.win-tool {
+  font: inherit;
+  font-size: 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: white;
+  padding: 0 0.2rem;
+}
+
+.win-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.win-body > * {
+  height: 100%;
+}
+
+.win-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    #bbb 50%,
+    #bbb 60%,
+    transparent 60%,
+    transparent 75%,
+    #bbb 75%,
+    #bbb 85%,
+    transparent 85%
+  );
+}
+
+/* the tools, filling their windows */
+.win-body .editor .cm-editor {
+  height: 100%;
+  font-size: 0.85rem;
+}
+
+.md-preview {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.md-preview h1 {
+  font-size: 1.15rem;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.md-preview h2 {
+  font-size: 1rem;
+  margin: 0.5rem 0 0.3rem;
+}
+
+.md-preview p,
+.md-preview ol,
+.md-preview ul {
+  margin: 0.4rem 0;
+}
+
+/* the pdf: the html measured once, hidden, then shown through as many
+   page-sized windows as it fills */
+.pdf {
+  position: relative;
+  background: #e4e4e8;
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.pdf-clip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.pdf-sheets {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pdf-page {
+  position: relative;
+  flex: none;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.pdf-measure,
+.pdf-flow {
+  display: flow-root;
+  font-size: 0.6rem;
+  line-height: 1.4;
+}
+
+.pdf-measure h1,
+.pdf-flow h1 {
+  font-size: 1rem;
+  margin: 0 0 0.4em;
+}
+
+.pdf-measure h2,
+.pdf-flow h2 {
+  font-size: 0.8rem;
+  margin: 0.6em 0 0.3em;
+}
+
+.pdf-measure p,
+.pdf-flow p,
+.pdf-measure ol,
+.pdf-flow ol,
+.pdf-measure ul,
+.pdf-flow ul {
+  margin: 0.35em 0;
+}
+
+.pdf-number {
+  position: absolute;
+  bottom: 5px;
+  right: 8px;
+  font-size: 0.5rem;
+  color: var(--faint);
+}
+
+.count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.count-number {
+  font-size: 2.2rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-label {
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+
+.stats {
+  width: 100%;
+  height: auto;
+  font-size: 0.8rem;
+  border-collapse: collapse;
+}
+
+.stats th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--faint);
+  padding: 0.25rem 0.6rem;
+}
+
+.stats td {
+  text-align: right;
+  padding: 0.25rem 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats tr + tr {
+  border-top: 1px solid #f0f0f0;
+}
+
+/* the workspace as a folder: the inspector's window, drawn by the demo's
+   own viewer, with a shelf above it holding the sticker */
+.workspace-folder {
+  font-size: 0.8rem;
+}
+
+.sticker-shelf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-height: 2rem;
+  margin-bottom: 0.6rem;
+}
+
+.shelf-hint {
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+.tree-item.over,
+.tree-item.inherited.over {
+  background: #dbe7fd;
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.tree-item.stuck .tree-value {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #fde68a;
+  color: #78350f;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  user-select: none;
+  transform: rotate(-2deg);
+}
+
+.sticker:active {
+  cursor: grabbing;
+}
+
+.sticker.stuck {
+  max-width: 100%;
+  cursor: default;
+  transform: rotate(-1.5deg);
+}
+
+.sticker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sticker-peel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+  color: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sticker-peel:hover {
+  background: rgba(0, 0, 0, 0.2);
 }

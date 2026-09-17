@@ -23,6 +23,20 @@ export type Color = { color: string };
 export type MarkdownDoc = { type?: "markdown"; content: string };
 export type Folder = Record<string, string>;
 
+// A window on the layout: which tool, where, and which document. With
+// `current` set the window mounts nothing of its own, so its `document`
+// is whatever the host of the layout has there.
+export type LayoutWindow = {
+  componentUrl: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  docUrl: string;
+  current?: boolean;
+};
+export type LayoutDoc = { windows: Record<string, LayoutWindow> };
+
 // the frame: the documents the sidebar lists, and the view state shared by
 // the sidebar and whichever window manager is running
 export type DocumentsDoc = { type: "documents"; documents: string[] };
