@@ -79,9 +79,11 @@ export function Section(props: {
   chain: Directory[];
   /** Puts the demo's documents back in their seeded state. */
   reset?: () => void;
+  /** Preview and inspector, in fractions; 1:2 by default. */
+  widths?: [number, number];
   children: JSX.Element;
 }) {
-  const [widths, setWidths] = createSignal([1, 2]);
+  const [widths, setWidths] = createSignal<number[]>(props.widths ?? [1, 2]);
   let band!: HTMLDivElement;
 
   // a divider drag moves width between its neighbours, in fractions

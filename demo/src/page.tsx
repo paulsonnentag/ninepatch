@@ -4,6 +4,7 @@ import { ChatDemo } from "./demos/chat";
 import { CanvasDemo } from "./demos/canvas";
 import { WhiteboardDemo } from "./demos/whiteboard";
 import { BrowserDemo } from "./demos/browser";
+import { ViewsDemo } from "./demos/views";
 
 export function Page() {
   return (
@@ -25,6 +26,7 @@ export function Page() {
       <CanvasDemo />
       <WhiteboardDemo />
       <BrowserDemo />
+      <ViewsDemo />
     </>
   );
 }

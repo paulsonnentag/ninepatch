@@ -15,6 +15,20 @@ export type Place = { id: string; title: string; lat: number; lng: number };
 export type MarkdownDoc = { content: string };
 export type Folder = Record<string, string>;
 
+// A window on the layout: which tool, where, and which document. With
+// `current` set the window mounts nothing of its own, so its `document`
+// is whatever the host of the layout has there.
+export type LayoutWindow = {
+  componentUrl: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  docUrl: string;
+  current?: boolean;
+};
+export type LayoutDoc = { windows: Record<string, LayoutWindow> };
+
 // A surface holds shapes; every shape is a component placed at x/y with an
 // outline of points relative to that position, in the surface's own units.
 // A shape is its component's document, so a shape that is itself a surface
@@ -74,6 +88,9 @@ export type Seed = {
   whiteboard: string;
   notes: string;
   notes2: string;
+  recipe: string;
+  letter: string;
+  layout: string;
   alice: string;
   bob: string;
 };

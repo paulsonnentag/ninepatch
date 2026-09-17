@@ -41,6 +41,12 @@ Each one is a working page plus the source of every tool it spawns.
 - **The URL is a text field** — a `Route` process mounts `document` as a
   two-way lens over the url, so the bar only writes the url and the editor
   only rebinds the doc.
+- **An arrangement of windows is a view** — a window manager whose
+  document is the layout: each window is a fork running a tool, a window
+  with a document of its own has it pinned in, and a window wearing the
+  _current document_ sticker inherits `document` from wherever the layout
+  is placed, so the same layout reads the notes on one side and whatever
+  the picker chose on the other.
 
 ## Layout
 
