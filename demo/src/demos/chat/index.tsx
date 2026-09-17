@@ -2,7 +2,6 @@ import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed, seedChatMessages } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { ChatDoc } from "../../types";
-import chatSource from "./chat.tsx?raw";
 
 export function ChatDemo() {
   return (
@@ -10,7 +9,6 @@ export function ChatDemo() {
       title="Chat"
       chain={[frame, chat]}
       reset={reset}
-      sources={[{ name: "chat.tsx", code: chatSource }]}
       prose={
         <p>
           The same chat tool is mounted twice on the same document with a

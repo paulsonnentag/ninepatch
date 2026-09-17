@@ -2,14 +2,6 @@ import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed, seedWhiteboardShapes } from "../../boot";
 import { Section } from "../../harness";
 import type { Selected, SurfaceDoc } from "../../types";
-import canvasSource from "./canvas.tsx?raw";
-import mapSource from "./map.tsx?raw";
-import penSource from "./pen.tsx?raw";
-import eraserSource from "./eraser.tsx?raw";
-import toolsSource from "./tools.ts?raw";
-import lineSource from "./line.tsx?raw";
-import inputSource from "./input.ts?raw";
-import geometrySource from "./geometry.ts?raw";
 
 export function WhiteboardDemo() {
   return (
@@ -17,16 +9,6 @@ export function WhiteboardDemo() {
       title="Whiteboard"
       chain={[frame, root]}
       reset={reset}
-      sources={[
-        { name: "canvas.tsx", code: canvasSource },
-        { name: "map.tsx", code: mapSource },
-        { name: "pen.tsx", code: penSource },
-        { name: "eraser.tsx", code: eraserSource },
-        { name: "tools.ts", code: toolsSource },
-        { name: "line.tsx", code: lineSource },
-        { name: "input.ts", code: inputSource },
-        { name: "geometry.ts", code: geometrySource },
-      ]}
       prose={
         <p>
           Rio, one level at a time. The root has a <code>pointer</code> — a
