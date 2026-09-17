@@ -1,7 +1,8 @@
-// the page furniture: tools as Solid components, and a section — prose
-// plus three panels: the live example, the code, and the directories
+// the page furniture: tools as Solid components, and a section — a title
+// plus two panels: the live example and the directories
 
 import {
+  batch,
   createEffect,
   createMemo,
   createResource,
@@ -10,10 +11,12 @@ import {
   ErrorBoundary,
   For,
   from,
+  mapArray,
   onCleanup,
   onMount,
   Show,
   splitProps,
+  untrack,
   type Accessor,
   type JSX,
 } from "solid-js";
@@ -26,16 +29,9 @@ import {
   type Process,
   type Resolution,
 } from "@ninepatch/core";
-import { javascript } from "@codemirror/lang-javascript";
-import { syntaxHighlighting } from "@codemirror/language";
-import { EditorState, RangeSetBuilder, Text } from "@codemirror/state";
-import { Decoration, EditorView } from "@codemirror/view";
-import { classHighlighter } from "@lezer/highlight";
-import { Portal, render } from "solid-js/web";
-import { RawEditor } from "./raw-editor";
+import { render } from "solid-js/web";
+import { isPrimitive, PrimitiveField, RawEditor } from "./raw-editor";
 import { processes, registerTool } from "./boot";
-
-export type Source = { name: string; code: string };
 
 // a tool as a Solid component: forks `dir`, mounts every other prop as an
 // entry plus its element as `dom`, spawns the module, closes on cleanup
@@ -47,7 +43,7 @@ export function createComponent<
   const fallback = componentName(url);
   return function Component(props: Props & { dir: Directory; name?: string }) {
     const [own, mounts] = splitProps(props, ["dir", "name"]);
-    const dir = own.dir.fork(own.name ?? fallback);
+    const dir = own.dir.fork(own.name ?? fallback.toLowerCase()); // directories are lower case
     const el = (<div class="tool" />) as HTMLDivElement;
     for (const [entry, value] of Object.entries(mounts))
       dir.mount(entry, value);
@@ -70,11 +66,10 @@ function componentName(url: string): string {
   return base[0].toUpperCase() + base.slice(1); // chat.tsx runs as "Chat"
 }
 
-// a section: title and prose, then a band — preview | data | code
+// a section: a title, then a band — preview | inspector, which stacks on
+// a narrow screen
 export function Section(props: {
   title: string;
-  prose: JSX.Element;
-  sources: Source[];
   /** The section's directory, last, after everything it was forked from. */
   chain: Directory[];
   /** Puts the demo's documents back in their seeded state. */
@@ -116,21 +111,20 @@ export function Section(props: {
   };
 
   return (
-    <section>
-      <h2>
+    <section class="demo">
+      <h3 class="demo-title">
         {props.title}
         <Show when={props.reset}>
           <button class="reset" onClick={() => props.reset!()}>
             reset
           </button>
         </Show>
-      </h2>
-      <div class="prose">{props.prose}</div>
+      </h3>
       <div
         class="panels"
         ref={band}
         style={{
-          "grid-template-columns": widths()
+          "--columns": widths()
             .map((w) => `minmax(0, ${w}fr)`)
             .join(" 1px "),
         }}
@@ -143,36 +137,12 @@ export function Section(props: {
         <div class="panel context">
           <h3>inspector</h3>
           <div class="panel-body">
-            <Windows chain={props.chain} sources={props.sources} />
+            <Windows chain={props.chain} />
           </div>
         </div>
       </div>
     </section>
   );
-}
-
-// a `dir.open("name")` on a line: the entry that line depends on
-const OPENS = /\.open(?:<[^>]*>)?\(\s*["'`]([^"'`]+)/;
-
-// every line that opens an entry is tagged with it, so the dependency
-// lines can start there and hovering it lights the entry
-function opensDecorations(code: string) {
-  const doc = Text.of(code.split("\n"));
-  const builder = new RangeSetBuilder<Decoration>();
-  for (let n = 1; n <= doc.lines; n++) {
-    const line = doc.line(n);
-    const name = OPENS.exec(line.text)?.[1];
-    if (name)
-      builder.add(
-        line.from,
-        line.from,
-        Decoration.line({
-          class: "cm-opens",
-          attributes: { "data-opens": name },
-        })
-      );
-  }
-  return EditorView.decorations.of(builder.finish());
 }
 
 // --- the windows --------------------------------------------------------------
@@ -211,15 +181,21 @@ type Selection = {
   from: Owner | undefined;
 };
 
+// a pane across a window: the listing at a path, or the picked leaf's preview
+type Pane =
+  { kind: "listing"; path: string[] } | { kind: "preview"; sel: Selection };
+
+// how long a pane takes to slide in or out — the transition in the css
+const SLIDE_MS = 250;
+
 // how a window is found from elsewhere — the preview's "from" link
 type Registry = Map<Directory, () => void>;
 
 // one window per directory, processes as nodes beside them; one selection
 // for the whole tree, so picking in one window closes the others
-function Windows(props: { chain: Directory[]; sources: Source[] }) {
+function Windows(props: { chain: Directory[] }) {
   const registry: Registry = new Map();
   const table = from(processes, processes.value);
-  const [column, setColumn] = createSignal<HTMLDivElement>();
   let tree!: HTMLDivElement;
   mountHighlight();
   mountProcLines();
@@ -227,27 +203,21 @@ function Windows(props: { chain: Directory[]; sources: Source[] }) {
   onMount(() => {
     const observer = new ResizeObserver(bumpLayout);
     observer.observe(tree);
-    observer.observe(column()!); // hidden while empty, so it appears with the first window
     onCleanup(() => observer.disconnect());
   });
   return (
-    <div class="windows" role="tree">
-      <div class="tree" ref={tree}>
-        <Node
-          chain={props.chain}
-          depth={0}
-          registry={registry}
-          processes={table}
-          sources={props.sources}
-          column={column}
-        />
-      </div>
-      <div class="code-column" ref={setColumn} />
+    <div class="windows" role="tree" ref={tree}>
+      <Node
+        chain={props.chain}
+        depth={0}
+        registry={registry}
+        processes={table}
+      />
     </div>
   );
 }
 
-// the tree changed shape: code windows re-align with their directory window
+// the tree changed shape: the process lines are redrawn to the rows
 const [layout, bumpLayout] = createSignal(0, { equals: false });
 
 // --- selection ------------------------------------------------------------------
@@ -305,8 +275,6 @@ function Node(props: {
   depth: number;
   registry: Registry;
   processes: Accessor<Process[]>;
-  sources: Source[];
-  column: Accessor<HTMLDivElement | undefined>;
 }) {
   const self = props.chain[props.chain.length - 1];
   const probe = tryFork(self);
@@ -337,10 +305,6 @@ function Node(props: {
     (props.depth > 0 ? own().length === 0 : names().length === 0);
   const [folded, setFolded] = createSignal(props.depth > 0); // nested windows start closed
   const [height, setHeight] = createSignal(250);
-  // the process whose source is open in the code column beside this window
-  const [code, setCode] = createSignal<Process>();
-  const sourceFor = (p: Process) =>
-    props.sources.find((src) => src.name === p.url.split("/").pop());
   let el!: HTMLDivElement;
 
   // the bottom edge drags, never shorter than the title bar and a few rows
@@ -362,34 +326,98 @@ function Node(props: {
 
   const mine = () => selections().get(self);
   const isFocused = () => focusedWindow() === self;
-  // where the window is looking: the title bar spells it as a breadcrumb
+  // where the window is looking: the folder open in the right-hand pane;
+  // the title bar spells the way there as a breadcrumb
   const [at, setAt] = createSignal<string[]>([]);
   const here = createMemo(() => {
     const path = at();
     return from(self.list(path), self.list(path).value);
   });
-  const go = (path: string[]) => {
-    setAt(path);
-    select(self, undefined);
-  };
-  // the picked name, when it is in the listing shown
-  const selected = () => {
+  const go = (path: string[]) =>
+    batch(() => {
+      setAt(path);
+      select(self, undefined);
+    });
+  // the picked name, when it is in the listing at `path`
+  const selectedIn = (path: string[]) => {
     const sel = mine();
-    if (!sel || sel.path.slice(0, -1).join("/") !== at().join("/")) return;
+    if (!sel || sel.path.slice(0, -1).join("/") !== path.join("/")) return;
     return sel.path[sel.path.length - 1];
   };
-  // a name with names below it is walked into; a leaf is picked, and
-  // picked again is let go
+  // the url of where the window is looking, if it has one: a document
+  // reached through a link lands in an entry keyed by its url
+  const hereUrl = createMemo((): Accessor<string | undefined> => {
+    const path = at();
+    if (path.length === 0) return () => undefined;
+    const landed = from(self.resolve(path), self.resolve(path).value);
+    return () => {
+      const own = landed()?.ownerPath;
+      return own && hasScheme(own[0]) ? urlOf(own) : undefined;
+    };
+  });
+  // the name walked into from the listing at `path`: the next step of the way
+  const walkedIn = (path: string[]) => {
+    const way = at();
+    if (way.length <= path.length) return;
+    return path.every((n, i) => n === way[i]) ? way[path.length] : undefined;
+  };
+  // a name with names below it opens in the pane to its right; a leaf is
+  // picked and previewed there, and picked again is let go
   const pick = (
     path: string[],
     handle: Handle<unknown> | undefined,
     owner: Owner | undefined,
     folder: boolean
   ) => {
+    const parent = path.slice(0, -1);
     if (folder) return go(path);
-    if (selected() === path[path.length - 1]) return select(self, undefined);
-    select(self, { path, dir: self, probe, handle, from: owner });
+    if (selectedIn(parent) === path[path.length - 1])
+      return select(self, undefined);
+    batch(() => {
+      setAt(parent);
+      select(self, { path, dir: self, probe, handle, from: owner });
+    });
   };
+
+  // the panes across the window: a listing for every step of the way, then
+  // the picked leaf's preview; the last two show, the rest have slid off
+  // to the left. Panes keep their identity so a step back finds them again.
+  const listings = new Map<string, Pane>();
+  let preview: Pane | undefined;
+  const panes = createMemo<Pane[]>(() => {
+    const way = at();
+    const out: Pane[] = [];
+    for (let i = 0; i <= way.length; i++) {
+      const path = way.slice(0, i);
+      const key = path.join("/");
+      let pane = listings.get(key);
+      if (!pane) listings.set(key, (pane = { kind: "listing", path }));
+      out.push(pane);
+    }
+    const sel = mine();
+    if (sel) {
+      if (preview?.kind !== "preview" || preview.sel !== sel)
+        preview = { kind: "preview", sel };
+      out.push(preview);
+    }
+    return out;
+  });
+  // a step back keeps the pane it leaves until it has slid out of view
+  const [shown, setShown] = createSignal(panes());
+  createEffect(() => {
+    const next = panes();
+    const prev = untrack(shown);
+    const back =
+      next.length < prev.length && next.every((p, i) => p === prev[i]);
+    if (!back) return setShown(next);
+    const timer = setTimeout(() => setShown(next), SLIDE_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
+  const behind = () => Math.max(0, panes().length - 2);
+  createEffect(() => {
+    panes();
+    bumpLayout(0); // the rows the process lines end at have moved
+  });
 
   props.registry.set(self, () => {
     setFolded(false);
@@ -416,8 +444,6 @@ function Node(props: {
           depth={transparent() ? props.depth : props.depth + 1}
           registry={props.registry}
           processes={props.processes}
-          sources={props.sources}
-          column={props.column}
         />
       )}
     </For>
@@ -430,7 +456,6 @@ function Node(props: {
           <div
             class="window"
             classList={{
-              open: mine() !== undefined,
               focused: isFocused(),
               folded: folded(),
             }}
@@ -439,29 +464,7 @@ function Node(props: {
             onPointerDown={() => setFocusedWindow(self)}
           >
             <div class="titlebar" title={self.name}>
-              <nav class="crumbs">
-                <button
-                  class="crumb"
-                  classList={{ current: at().length === 0 }}
-                  onClick={() => go([])}
-                >
-                  {label(self.name)}
-                </button>
-                <For each={at()}>
-                  {(name, i) => (
-                    <>
-                      <span class="crumb-sep">›</span>
-                      <button
-                        class="crumb"
-                        classList={{ current: i() === at().length - 1 }}
-                        onClick={() => go(at().slice(0, i() + 1))}
-                      >
-                        {name}
-                      </button>
-                    </>
-                  )}
-                </For>
-              </nav>
+              <span class="window-title">{label(self.name)}</span>
               <Show when={folded()}>
                 <span class="window-count">{names().length} names</span>
               </Show>
@@ -475,62 +478,75 @@ function Node(props: {
               </button>
             </div>
             <Show when={!folded()}>
+              <div class="crumbbar">
+                <nav class="crumbs">
+                  <button
+                    class="crumb"
+                    classList={{ current: at().length === 0 }}
+                    title="the top"
+                    onClick={() => go([])}
+                  >
+                    .
+                  </button>
+                  <For each={at()}>
+                    {(name, i) => (
+                      <>
+                        <span class="crumb-sep">›</span>
+                        <button
+                          class="crumb"
+                          classList={{ current: i() === at().length - 1 }}
+                          onClick={() => go(at().slice(0, i() + 1))}
+                        >
+                          {name}
+                        </button>
+                      </>
+                    )}
+                  </For>
+                </nav>
+                <Show when={hereUrl()()}>
+                  {(url) => (
+                    <span class="crumb-url" title={url()}>
+                      {url()}
+                    </span>
+                  )}
+                </Show>
+              </div>
               <div class="window-body">
-                <Show when={at()} keyed>
-                  {(path) => (
-                    <Listing
-                      self={self}
-                      probe={probe}
-                      path={path}
-                      selected={selected()}
-                      focused={isFocused()}
-                      procs={procs}
-                      pick={pick}
-                    />
-                  )}
-                </Show>
-                <Show when={mine()} keyed>
-                  {(sel) => (
-                    <Preview
-                      selection={sel}
-                      reveal={(dir) => props.registry.get(dir)?.()}
-                      close={() => select(self, undefined)}
-                    />
-                  )}
-                </Show>
+                <div
+                  class="strip"
+                  classList={{ single: panes().length === 1 }}
+                  style={{ "--behind": behind() }}
+                  onTransitionEnd={() => bumpLayout(0)}
+                >
+                  <For each={shown()}>
+                    {(pane) =>
+                      pane.kind === "listing" ? (
+                        <Listing
+                          self={self}
+                          probe={probe}
+                          path={pane.path}
+                          selected={selectedIn(pane.path)}
+                          walked={walkedIn(pane.path)}
+                          focused={isFocused()}
+                          pick={pick}
+                        />
+                      ) : (
+                        <Preview
+                          selection={pane.sel}
+                          reveal={(dir) => props.registry.get(dir)?.()}
+                          close={() => select(self, undefined)}
+                        />
+                      )
+                    }
+                  </For>
+                </div>
               </div>
               <div class="window-grip" onPointerDown={resize} />
             </Show>
           </div>
           <div class="procs">
-            <For each={procs()}>
-              {(p) => (
-                <ProcNode
-                  process={p}
-                  open={code() === p}
-                  onToggle={() => setCode(code() === p ? undefined : p)}
-                />
-              )}
-            </For>
+            <For each={procs()}>{(p) => <ProcNode process={p} />}</For>
           </div>
-          <Show when={props.column()}>
-            {(column) => (
-              <Show when={code()} keyed>
-                {(p) => (
-                  <Portal mount={column()}>
-                    <CodeWindow
-                      process={p}
-                      source={sourceFor(p)}
-                      anchor={el}
-                      column={column()}
-                      height={height()}
-                      close={() => setCode(undefined)}
-                    />
-                  </Portal>
-                )}
-              </Show>
-            )}
-          </Show>
         </div>
         <div class="folder-children">{below()}</div>
       </div>
@@ -547,8 +563,9 @@ function Listing(props: {
   probe: Directory | undefined;
   path: string[];
   selected: string | undefined;
+  /** The name whose listing is open in the pane to the right. */
+  walked: string | undefined;
   focused: boolean;
-  procs: Accessor<Process[]>;
   pick: (
     path: string[],
     handle: Handle<unknown> | undefined,
@@ -573,10 +590,6 @@ function Listing(props: {
   });
   onCleanup(() => held?.close());
 
-  const isLit = (key: string) => {
-    const dep = hoveredDep();
-    return dep?.name === key && props.procs().some((p) => p.pid === dep.pid);
-  };
   // this row is where the focused selection, in another window, was
   // inherited from
   const isOrigin = (key: string) => {
@@ -598,21 +611,40 @@ function Listing(props: {
     );
   };
 
+  // inherited entries first, then the ones mounted here, each alphabetical
+  const rows = mapArray(names, (name) => {
+    const path = [...props.path, name];
+    const resolved = from(
+      props.self.resolve(path),
+      props.self.resolve(path).value
+    );
+    const owner = createMemo(() => ownerOf(props.self, resolved()));
+    return { name, path, key: path.join("/"), resolved, owner };
+  });
+  const sorted = createMemo(() =>
+    [...rows()].sort(
+      (a, b) =>
+        Number(b.owner()?.inherited ?? false) -
+          Number(a.owner()?.inherited ?? false) || a.name.localeCompare(b.name)
+    )
+  );
+
   return (
     <div class="entries">
-      <For each={names()}>
-        {(name) => {
-          const path = [...props.path, name];
-          const key = path.join("/");
-          const resolved = from(
-            props.self.resolve(path),
-            props.self.resolve(path).value
+      <For each={sorted()}>
+        {({ name, path, key, resolved, owner }) => {
+          const handle = createMemo(
+            () =>
+              resolved()?.handle ??
+              (opened() ? field<unknown>(opened()!, [name]) : undefined)
           );
-          const owner = createMemo(() => ownerOf(props.self, resolved()));
-          const handle = () =>
-            resolved()?.handle ??
-            (opened() ? field<unknown>(opened()!, [name]) : undefined);
           const [value, setValue] = createSignal<unknown>();
+          // a plain value is edited in its row; a link stays a link
+          const inline = () =>
+            below().length === 0 &&
+            handle() !== undefined &&
+            isPrimitive(value()) &&
+            !(typeof value() === "string" && hasScheme(value() as string));
           createEffect(() => {
             const h = handle();
             if (!h) return setValue(undefined);
@@ -629,9 +661,9 @@ function Listing(props: {
               data-path={key}
               classList={{
                 selected: props.selected === name,
+                walked: props.walked === name,
                 origin: isOrigin(key),
                 twin: isTwin(name, value()),
-                lit: isLit(key),
                 inherited: owner()?.inherited ?? false,
                 folder: below().length > 0,
               }}
@@ -655,7 +687,13 @@ function Listing(props: {
               </Show>
               <span class="tree-name">{name}</span>
               <span class="tree-value">
-                <Summary value={value()} />
+                <Show when={inline()} fallback={<Summary value={value()} />}>
+                  <PrimitiveField
+                    value={value()}
+                    set={(v) => handle()!.set(v)}
+                    compact
+                  />
+                </Show>
               </span>
               <Show when={below().length > 0}>
                 <span class="tree-more">›</span>
@@ -671,110 +709,30 @@ function Listing(props: {
 // --- processes ------------------------------------------------------------
 
 // what lights a line blue: the pill under the pointer lights all of its
-// process's lines, a line of code or an entry row lights just its own
+// process's lines, an entry row lights just its own
 const [hoveredProc, setHoveredProc] = createSignal<Process>();
-const [hoveredDep, setHoveredDep] = createSignal<{
-  pid: Process["pid"];
-  name: string;
-}>();
 const [hoveredRow, setHoveredRow] = createSignal<Element>();
 // the processes with lines drawn; their pills need no stub of their own
 const [linked, setLinked] = createSignal(new Set<Process["pid"]>());
 
-// a process beside its directory's window; hover lights its lines, click
-// opens the node up into a box of its source in the code column; while
-// open the pill is gone, the box is the node
-function ProcNode(props: {
-  process: Process;
-  open: boolean;
-  onToggle: () => void;
-}) {
+// a process beside its directory's window; hovering it lights its lines,
+// and a tap does the same where there is no pointer to hover with
+function ProcNode(props: { process: Process }) {
   const p = props.process;
   const unhover = () => setHoveredProc((h) => (h === p ? undefined : h));
   onCleanup(unhover);
-  createEffect(() => props.open && unhover()); // the pill vanished under the pointer
   return (
     <button
       class="proc"
-      classList={{
-        focused: hoveredProc() === p,
-        open: props.open,
-        linked: linked().has(p.pid),
-      }}
+      classList={{ focused: hoveredProc() === p, linked: linked().has(p.pid) }}
       data-pid={p.pid}
       title={p.url}
       onMouseEnter={() => setHoveredProc(p)}
       onMouseLeave={unhover}
-      onClick={props.onToggle}
+      onClick={() => setHoveredProc(p)}
     >
       <span class="proc-name">{p.name}</span>
     </button>
-  );
-}
-
-// the process's source, read-only, in the code column level with its
-// directory window and as tall as it stands unfolded
-function CodeWindow(props: {
-  process: Process;
-  source: Source | undefined;
-  anchor: HTMLElement;
-  column: HTMLElement;
-  height: number;
-  close: () => void;
-}) {
-  const code = props.source?.code ?? `// no source for ${props.process.url}`;
-  const box = createMemo(() => {
-    layout();
-    const a = props.anchor.getBoundingClientRect();
-    const c = props.column.getBoundingClientRect();
-    return { "margin-top": `${a.top - c.top}px`, height: `${props.height}px` };
-  });
-  let host!: HTMLDivElement;
-  onMount(() => {
-    const view = new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc: code,
-        extensions: [
-          EditorState.readOnly.of(true),
-          EditorView.editable.of(false),
-          javascript({ jsx: true, typescript: true }),
-          syntaxHighlighting(classHighlighter),
-          opensDecorations(code),
-        ],
-      }),
-    });
-    onCleanup(() => view.destroy());
-  });
-  const hover = (e: MouseEvent) => {
-    const line = (e.target as Element).closest?.<HTMLElement>(".cm-opens");
-    const name = line?.dataset.opens;
-    setHoveredDep(name ? { pid: props.process.pid, name } : undefined);
-  };
-  return (
-    <div class="code-window" data-code-pid={props.process.pid} style={box()}>
-      <div class="code-titlebar" title={props.process.url}>
-        <span class="code-title">{props.process.name}</span>
-        <span class="code-file">{props.source?.name}</span>
-        <button class="fold code-close" title="close" onClick={props.close}>
-          <CloseIcon />
-        </button>
-      </div>
-      <div
-        class="code-body"
-        ref={host}
-        onMouseMove={hover}
-        onMouseLeave={() => setHoveredDep(undefined)}
-      />
-    </div>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg class="icon fold-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-    </svg>
   );
 }
 
@@ -822,22 +780,18 @@ function ProcLines() {
   createEffect(() => {
     layout();
     selections(); // a preview opening or closing changes which lines show
-    requestAnimationFrame(redraw); // after the code windows re-align
+    requestAnimationFrame(redraw); // after the panes have moved
   });
 
   const lines = createMemo(() => {
     bump();
     const proc = hoveredProc();
-    const dep = hoveredDep();
     const row = hoveredRow();
     const all = table().flatMap((p) =>
       linesFor(p, opened().get(p) ?? []).map((line) => ({
         d: line.d,
         pid: p.pid,
-        focused:
-          p === proc ||
-          (dep?.pid === p.pid && dep.name === line.name) ||
-          (row !== undefined && row === line.item),
+        focused: p === proc || row === line.item,
       }))
     );
     return all.sort((a, b) => Number(a.focused) - Number(b.focused)); // colour on top
@@ -857,35 +811,17 @@ function ProcLines() {
   );
 }
 
-type Line = {
-  d: string;
-  name?: string;
-  item?: Element;
-};
+type Line = { d: string; item: Element };
 
-// a process's lines: from its node, or the code lines in its open box, down
-// the lane and into the rows it has open
+// a process's lines: from its pill, down the lane and into the rows it has
+// open; a folded window has no rows to reach
 function linesFor(p: Process, names: string[]): Line[] {
   const chip = document.querySelector(`.proc[data-pid="${p.pid}"]`);
-  const win = chip?.closest(".window-row")?.querySelector(".window");
-  const body = win?.querySelector(".window-body");
-  const box = document.querySelector(`.code-window[data-code-pid="${p.pid}"]`);
-  if (!chip || !win) return [];
-  // the directory folded with the box open: one line, window to box
-  if (!body) {
-    if (!box) return [];
-    const w = win.getBoundingClientRect();
-    const c = box.getBoundingClientRect();
-    const from = { x: w.right, y: w.top + 16 };
-    const to = { x: c.left, y: c.top + 16 };
-    return [{ d: `M ${from.x} ${from.y} L ${to.x} ${to.y}` }];
-  }
-  const source = box?.querySelector(".cm-scroller");
-  // the node: the open box, or the pill in the lane
-  const c = (box ?? chip).getBoundingClientRect();
+  const body = chip?.closest(".window-row")?.querySelector(".window-body");
+  if (!chip || !body) return [];
+  const c = chip.getBoundingClientRect();
   const b = body.getBoundingClientRect();
-  const s = source?.getBoundingClientRect();
-  const fromChip = { x: c.left, y: c.top + (box ? 16 : c.height / 2) };
+  const start = { x: c.left, y: c.top + c.height / 2 };
   const trunk = (b.right + c.left) / 2; // down the lane beside the window
   // a preview covers the rows' right side: only the selected entry's line
   const selected = body.querySelector(".preview")
@@ -898,15 +834,9 @@ function linesFor(p: Process, names: string[]): Line[] {
     if (!item) continue;
     const r = item.getBoundingClientRect();
     if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
-    // from the line of code that opened it, when its source is open
-    const line = source?.querySelector(`[data-opens="${CSS.escape(name)}"]`);
-    const l = line?.getBoundingClientRect();
-    const start =
-      l && s && l.bottom >= s.top && l.top <= s.bottom
-        ? { x: s.left, y: l.top + l.height / 2 }
-        : fromChip;
+    if (r.right < b.left || r.left > b.right) continue; // in a pane that slid away
     const end = { x: b.right, y: r.top + r.height / 2 }; // stops at the window's edge
-    out.push({ d: hook(start, trunk, end), name, item });
+    out.push({ d: hook(start, trunk, end), item });
   }
   return out;
 }
@@ -1384,6 +1314,13 @@ function readValue(handle: Handle<unknown>): unknown {
 
 function label(name: string): string {
   return name.split("/").map(shorten).join("/");
+}
+
+// a URL-rooted path back as a URL: `https:host` + `index.xml` is
+// `https://host/index.xml`; an automerge URL is its one name
+function urlOf([head, ...rest]: readonly string[]): string {
+  const host = /^https?:/.test(head) ? head.replace(":", "://") : head;
+  return rest.length === 0 ? host : `${host}/${rest.join("/")}`;
 }
 
 // `automerge:4NMNnkMh…` — a URL keeps its scheme and a few id characters

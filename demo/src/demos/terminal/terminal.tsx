@@ -31,7 +31,7 @@ export function createTerminalComponent<
   const fallback = programName(url);
   return function Component(props: Props & { dir: Directory; name?: string }) {
     const [own, mounts] = splitProps(props, ["dir", "name"]);
-    const dir = own.dir.fork(own.name ?? fallback);
+    const dir = own.dir.fork(own.name ?? fallback.toLowerCase()); // directories are lower case
     for (const [entry, value] of Object.entries(mounts))
       dir.mount(entry, value);
 

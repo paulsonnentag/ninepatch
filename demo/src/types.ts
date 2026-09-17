@@ -10,9 +10,17 @@ export type CanvasItem = {
   y: number;
 };
 export type CanvasDoc = { items: Record<string, CanvasItem> };
-export type PlaceDoc = { title: string; lat?: number; lng?: number };
-export type Place = { id: string; title: string; lat: number; lng: number };
-export type MarkdownDoc = { content: string };
+export type PlaceDoc = {
+  title: string;
+  lat?: number;
+  lng?: number;
+  color?: string;
+};
+export type MapDoc = { center: { lng: number; lat: number }; zoom: number };
+// what the schemas walker sorts documents into, keyed by document URL
+export type Location = { title: string; lat: number; lng: number };
+export type Color = { color: string };
+export type MarkdownDoc = { type?: "markdown"; content: string };
 export type Folder = Record<string, string>;
 
 // A window on the layout: which tool, where, and which document. With
@@ -28,6 +36,46 @@ export type LayoutWindow = {
   current?: boolean;
 };
 export type LayoutDoc = { windows: Record<string, LayoutWindow> };
+
+// the frame: the documents the sidebar lists, and the view state shared by
+// the sidebar and whichever window manager is running
+export type DocumentsDoc = { type: "documents"; documents: string[] };
+export type Selection = {
+  document: string; // an empty one is nothing
+  view: string; // the componentUrl to show it with
+  target?: string; // a surface to open it in, by name
+};
+export type Surfaces = Record<string, string[]>; // by name, the documents on each; an empty one is a place the manager could make
+export type Workspace = {
+  selected: Selection;
+  open: string[]; // documents with a window
+  surfaces: Surfaces; // written by the current manager, in its own words
+};
+
+// An RSS feed as the feeds server mounts it: read-only, refetched on a
+// timer. Items are keyed by a slug of their link so each is a plain name.
+export type FeedItem = {
+  guid: string;
+  title: string;
+  link: string;
+  pubDate: string;
+  description: string;
+};
+export type FeedDoc = {
+  url: string; // where the feed was fetched from
+  title: string;
+  link: string; // the site
+  items: Record<string, FeedItem>;
+};
+// A like is about the thing, not the feed it was seen in: keyed by link,
+// with enough copied over to read as a list once the feed has moved on.
+export type Like = {
+  title: string;
+  link: string;
+  feed: string; // the feed URL it was liked from
+  at: number;
+};
+export type LikesDoc = { items: Record<string, Like> };
 
 // A surface holds shapes; every shape is a component placed at x/y with an
 // outline of points relative to that position, in the surface's own units.
@@ -93,4 +141,5 @@ export type Seed = {
   layout: string;
   alice: string;
   bob: string;
+  likes: string;
 };

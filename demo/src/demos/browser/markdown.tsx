@@ -40,7 +40,7 @@ const LINK = /\[([^\]]*)\]\((\/automerge:[A-Za-z0-9]+)\)/g;
 
 // a markdown link to `/automerge:…` renders as its underlined text; the
 // raw source shows while the cursor is inside; a click navigates
-function docLinks(go: (path: string) => void) {
+export function docLinks(go: (path: string) => void) {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;

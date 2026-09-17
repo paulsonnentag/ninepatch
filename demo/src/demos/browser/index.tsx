@@ -2,9 +2,6 @@ import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { MarkdownDoc } from "../../types";
-import routeSource from "./route.ts?raw";
-import urlbarSource from "./urlbar.tsx?raw";
-import markdownSource from "./markdown.tsx?raw";
 
 export function BrowserDemo() {
   return (
@@ -12,19 +9,6 @@ export function BrowserDemo() {
       title="The URL is a text field"
       chain={[frame, browser]}
       reset={reset}
-      sources={[
-        { name: "route.ts", code: routeSource },
-        { name: "urlbar.tsx", code: urlbarSource },
-        { name: "markdown.tsx", code: markdownSource },
-      ]}
-      prose={
-        <p>
-          A <code>Route</code> process keeps the part after the host in the
-          directory as <code>url</code> and mounts <code>document</code> as a
-          two-way lens over it, so the bar only ever writes the url, the editor
-          only ever rebinds the doc, and each follows the other.
-        </p>
-      }
     >
       <div class="browser">
         <div class="browser-chrome">

@@ -1,8 +1,9 @@
 name: Deploy demo to GitHub Pages
 
+# main is the site; every other branch is built too, as a preview under
+# /preview/<branch>/, so a change can be tried before it lands
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # every branch: main and the previews
 
       - uses: pnpm/action-setup@v4
         with:
@@ -29,15 +32,29 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-
-      # Pages serves a project site from /<repo>/, so the bundle needs that base.
-      - run: pnpm build --base=/${{ github.event.repository.name }}/
-        working-directory: demo
+      # Pages serves a project site from /<repo>/, so each bundle needs its base.
+      - name: Build main, and a preview of every other branch
+        env:
+          REPO: ${{ github.event.repository.name }}
+          SITE: ${{ runner.temp }}/site
+        run: |
+          set -euo pipefail
+          build() { # ref, base, outDir
+            git checkout --quiet --detach "$1"
+            pnpm install --frozen-lockfile
+            pnpm --filter demo build --base="$2" --outDir="$3"
+          }
+          build origin/main "/$REPO/" "$SITE"
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+            name="${ref#origin/}"
+            case "$name" in main | HEAD) continue ;; esac
+            slug="${name//\//-}" # claude/foo -> claude-foo
+            build "$ref" "/$REPO/preview/$slug/" "$SITE/preview/$slug"
+          done
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: demo/dist
+          path: ${{ runner.temp }}/site
 
   deploy:
     needs: build

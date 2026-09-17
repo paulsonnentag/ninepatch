@@ -11,15 +11,6 @@ import {
 } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { Folder, LayoutDoc, MarkdownDoc } from "../../types";
-import wmSource from "./wm.tsx?raw";
-import folderSource from "./folder.tsx?raw";
-import pickerSource from "./picker.tsx?raw";
-import editorSource from "./editor.tsx?raw";
-import previewSource from "./preview.tsx?raw";
-import pdfSource from "./pdf.tsx?raw";
-import wordcountSource from "./wordcount.tsx?raw";
-import statsSource from "./stats.tsx?raw";
-import toolsSource from "./tools.ts?raw";
 
 export function ViewsDemo() {
   return (
@@ -28,32 +19,6 @@ export function ViewsDemo() {
       chain={[frame, root]}
       reset={reset}
       widths={[3, 1]}
-      sources={[
-        { name: "wm.tsx", code: wmSource },
-        { name: "folder.tsx", code: folderSource },
-        { name: "picker.tsx", code: pickerSource },
-        { name: "editor.tsx", code: editorSource },
-        { name: "preview.tsx", code: previewSource },
-        { name: "pdf.tsx", code: pdfSource },
-        { name: "wordcount.tsx", code: wordcountSource },
-        { name: "stats.tsx", code: statsSource },
-        { name: "tools.ts", code: toolsSource },
-      ]}
-      prose={
-        <p>
-          The window manager's document is a <code>layout</code>: which tool
-          runs in each window, where it sits, and which document it shows. Each
-          window is a fork with the tool spawned in it; a window with a document
-          of its own has it pinned into the fork, and a window with the{" "}
-          <i>current document</i> sticker mounts nothing, so its{" "}
-          <code>document</code> falls through to whatever the layout was placed
-          in. On the left the layout sits in a directory holding the notes; on
-          the right the same layout, live, sits in one whose{" "}
-          <code>document</code> follows the picker — and only the stickered
-          windows follow along. Drag the sticker in the folder view to change
-          which ones do, and swap tools in the title bars.
-        </p>
-      }
     >
       <div class="views">
         <div class="views-pane">

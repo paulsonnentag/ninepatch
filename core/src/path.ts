@@ -4,6 +4,7 @@
 export type Path = string | string[];
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:/;
+const AUTHORITY = /^([a-z][a-z0-9+.-]*:)\/\//;
 
 export function parsePath(path: Path): string[] {
   if (typeof path !== "string") {
@@ -34,6 +35,9 @@ export function startsWith(
 // `\/` is a literal slash, `\:` a literal colon, `\\` a literal backslash
 function splitString(path: string): string[] {
   if (path === "") return [];
+  // https://host/x/ reads as https:host/x
+  if (SCHEME.test(path))
+    path = path.replace(AUTHORITY, "$1").replace(/\/$/, "");
   const names: string[] = [];
   let current = "";
   for (let i = 0; i < path.length; i++) {

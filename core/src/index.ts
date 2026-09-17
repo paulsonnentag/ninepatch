@@ -12,9 +12,11 @@ export {
 } from "./directory";
 export {
   derive,
+  Emitter,
   field,
   fromDoc,
   isHandle,
+  readonly,
   wrap,
   type DocHandleLike,
   type Handle,
