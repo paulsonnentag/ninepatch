@@ -29,7 +29,7 @@ import {
   type Resolution,
 } from "@ninepatch/core";
 import { render } from "solid-js/web";
-import { RawEditor } from "./raw-editor";
+import { isPrimitive, PrimitiveField, RawEditor } from "./raw-editor";
 import { processes, registerTool } from "./boot";
 
 // a tool as a Solid component: forks `dir`, mounts every other prop as an
@@ -599,10 +599,18 @@ function Listing(props: {
             props.self.resolve(path).value
           );
           const owner = createMemo(() => ownerOf(props.self, resolved()));
-          const handle = () =>
-            resolved()?.handle ??
-            (opened() ? field<unknown>(opened()!, [name]) : undefined);
+          const handle = createMemo(
+            () =>
+              resolved()?.handle ??
+              (opened() ? field<unknown>(opened()!, [name]) : undefined)
+          );
           const [value, setValue] = createSignal<unknown>();
+          // a plain value is edited in its row; a link stays a link
+          const inline = () =>
+            below().length === 0 &&
+            handle() !== undefined &&
+            isPrimitive(value()) &&
+            !(typeof value() === "string" && hasScheme(value() as string));
           createEffect(() => {
             const h = handle();
             if (!h) return setValue(undefined);
@@ -645,7 +653,13 @@ function Listing(props: {
               </Show>
               <span class="tree-name">{name}</span>
               <span class="tree-value">
-                <Summary value={value()} />
+                <Show when={inline()} fallback={<Summary value={value()} />}>
+                  <PrimitiveField
+                    value={value()}
+                    set={(v) => handle()!.set(v)}
+                    compact
+                  />
+                </Show>
               </span>
               <Show when={below().length > 0}>
                 <span class="tree-more">›</span>

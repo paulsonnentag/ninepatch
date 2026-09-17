@@ -14,10 +14,9 @@ export function RawEditor(props: { handle: Handle<unknown> }) {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   // writes go through `change`; a read-only handle's throw shows briefly
-  const write = (fn: (draft: unknown) => void, root?: unknown) => {
+  const write = (fn: (draft: unknown) => void) => {
     try {
-      if (root !== undefined) props.handle.set(root);
-      else props.handle.change(fn);
+      props.handle.change(fn);
     } catch (e) {
       setError((e as Error).message);
       clearTimeout(timer);
@@ -33,7 +32,17 @@ export function RawEditor(props: { handle: Handle<unknown> }) {
       <Show
         when={isCollection(value())}
         fallback={
-          <PrimitiveRoot value={value()} set={(v) => write(() => {}, v)} />
+          <Show
+            when={isPrimitive(value())}
+            fallback={
+              <div class="raw-row">
+                <span class="raw-toggle raw-toggle-spacer" />
+                <ValueText value={value()} expanded={false} onEdit={() => {}} />
+              </div>
+            }
+          >
+            <PrimitiveField value={value()} set={(v) => props.handle.set(v)} />
+          </Show>
         }
       >
         <Node
@@ -252,79 +261,101 @@ function ValueText(props: {
   );
 }
 
-// a primitive on its own is edited in place: the field writes as you type,
-// the picker beside it changes the type and converts what is there
-function PrimitiveRoot(props: { value: unknown; set: (v: unknown) => void }) {
+export function isPrimitive(v: unknown): boolean {
+  const t = typeof v;
+  return v === null || t === "string" || t === "number" || t === "boolean";
+}
+
+const KINDS: [Kind, string][] = [
+  ["string", "str"],
+  ["number", "num"],
+  ["boolean", "bool"],
+  ["null", "null"],
+];
+
+// a primitive edited in place: the field writes as you type, the picker
+// beside it changes the type and converts what is there; `compact` is for
+// a listing row, where the picker spells its types short
+export function PrimitiveField(props: {
+  value: unknown;
+  set: (v: unknown) => void;
+  compact?: boolean;
+}) {
   const kind = () => typeOf(props.value);
-  const editable = () =>
-    props.value === null ||
-    kind() === "string" ||
-    kind() === "number" ||
-    kind() === "boolean";
   // what is typed, while the field has focus; a number that doesn't parse
   // yet stays here and is not written
   const [draft, setDraft] = createSignal<string>();
+  const [error, setError] = createSignal<string>();
   const text = () =>
     draft() ?? (props.value === null ? "" : String(props.value));
   const invalid = () =>
     kind() === "number" && draft() !== undefined && !isNumber(draft()!);
+  const set = (v: unknown) => {
+    try {
+      props.set(v);
+      setError(undefined);
+    } catch (e) {
+      setError((e as Error).message); // a read-only handle
+    }
+  };
   const input = (t: string) => {
     setDraft(t);
     if (kind() === "number") {
-      if (isNumber(t)) props.set(Number(t));
-    } else props.set(t);
+      if (isNumber(t)) set(Number(t));
+    } else set(t);
   };
   return (
-    <Show
-      when={editable()}
-      fallback={
-        <div class="raw-row">
-          <span class="raw-toggle raw-toggle-spacer" />
-          <ValueText value={props.value} expanded={false} onEdit={() => {}} />
-        </div>
-      }
+    <span
+      class="raw-live"
+      classList={{ compact: props.compact }}
+      title={error()}
+      onClick={(e) => e.stopPropagation()} // the row around it stays as it is
     >
-      <div class="raw-live">
-        <Show when={kind() === "string" || kind() === "number"}>
-          <input
-            class="raw-input raw-field"
-            classList={{ invalid: invalid() }}
-            inputmode={kind() === "number" ? "decimal" : "text"}
-            placeholder={kind()}
-            value={text()}
-            onInput={(e) => input(e.currentTarget.value)}
-            onBlur={() => setDraft(undefined)}
-          />
-        </Show>
-        <Show when={kind() === "boolean"}>
-          <select
-            class="raw-input raw-field"
-            value={String(props.value)}
-            onChange={(e) => props.set(e.currentTarget.value === "true")}
-          >
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        </Show>
-        <Show when={kind() === "null"}>
-          <span class="raw-value null raw-field">null</span>
-        </Show>
+      <Show when={kind() === "string" || kind() === "number"}>
+        <input
+          class="raw-input raw-field"
+          classList={{ invalid: invalid() || error() !== undefined }}
+          inputmode={kind() === "number" ? "decimal" : "text"}
+          placeholder={kind()}
+          value={text()}
+          onInput={(e) => input(e.currentTarget.value)}
+          onBlur={() => setDraft(undefined)}
+        />
+      </Show>
+      <Show when={kind() === "boolean"}>
         <select
-          class="raw-input raw-kind"
-          title="type"
-          value={kind()}
-          onChange={(e) => {
-            setDraft(undefined);
-            props.set(convert(props.value, e.currentTarget.value as Kind));
-          }}
+          class="raw-input raw-field"
+          classList={{ invalid: error() !== undefined }}
+          onChange={(e) => set(e.currentTarget.value === "true")}
         >
-          <option value="string">string</option>
-          <option value="number">number</option>
-          <option value="boolean">boolean</option>
-          <option value="null">null</option>
+          <option value="true" selected={props.value === true}>
+            true
+          </option>
+          <option value="false" selected={props.value === false}>
+            false
+          </option>
         </select>
-      </div>
-    </Show>
+      </Show>
+      <Show when={kind() === "null"}>
+        <span class="raw-value null raw-field">null</span>
+      </Show>
+      <select
+        class="raw-input raw-kind"
+        title="type"
+        onChange={(e) => {
+          setDraft(undefined);
+          set(convert(props.value, e.currentTarget.value as Kind));
+        }}
+      >
+        <For each={KINDS}>
+          {([k, short]) => (
+            <option value={k} selected={kind() === k}>
+              {props.compact ? short : k}
+            </option>
+          )}
+        </For>
+      </select>
+    </span>
   );
 }
 

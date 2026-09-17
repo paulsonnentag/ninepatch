@@ -965,6 +965,31 @@ body.resizing {
   line-height: 1.4;
 }
 
+/* in a listing row the field and picker shrink to the row's type */
+.tree-value .raw-live {
+  gap: 0.25rem;
+  justify-content: flex-end;
+  user-select: text;
+}
+
+.tree-value .raw-field {
+  min-width: 2.5rem;
+  padding: 0.05rem 0.3rem;
+  font:
+    0.72rem ui-monospace,
+    monospace;
+}
+
+.tree-value .raw-value.null {
+  flex: 1;
+  text-align: right;
+}
+
+.tree-value .raw-kind {
+  padding: 0.05rem 0.15rem;
+  font-size: 0.7rem;
+}
+
 .raw-ok {
   color: #2e7d32 !important;
 }
