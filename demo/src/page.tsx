@@ -4,31 +4,48 @@ import { Placeholder } from "./placeholder";
 // every demo is its own module, loaded on its own: the page shows at
 // once with a placeholder per demo, and each fills in as its documents
 // arrive — one that is slow or fails holds up nothing else
+//
+// boot — the wasm, the repo, the seed — is imported once, on its own, and
+// the demos only after it has finished: they all import it, and Safari
+// runs a module whose dependency is still awaiting at its top level
+// before that dependency is done when the imports race, so the demos saw
+// boot's exports uninitialized
+const booted = import("./boot");
+const after =
+  <T,>(load: () => Promise<T>) =>
+  () =>
+    booted.then(load);
+
 const DEMOS: { title: string; load: () => Promise<Component> }[] = [
-  { title: "Chat", load: () => import("./demos/chat").then((m) => m.ChatDemo) },
+  {
+    title: "Chat",
+    load: after(() => import("./demos/chat").then((m) => m.ChatDemo)),
+  },
   {
     title: "Canvas",
-    load: () => import("./demos/canvas").then((m) => m.CanvasDemo),
+    load: after(() => import("./demos/canvas").then((m) => m.CanvasDemo)),
   },
   {
     title: "Window management",
-    load: () => import("./demos/frame").then((m) => m.FrameDemo),
+    load: after(() => import("./demos/frame").then((m) => m.FrameDemo)),
   },
   {
     title: "An arrangement of windows is a view",
-    load: () => import("./demos/views").then((m) => m.ViewsDemo),
+    load: after(() => import("./demos/views").then((m) => m.ViewsDemo)),
   },
   {
     title: "Whiteboard",
-    load: () => import("./demos/whiteboard").then((m) => m.WhiteboardDemo),
+    load: after(() =>
+      import("./demos/whiteboard").then((m) => m.WhiteboardDemo)
+    ),
   },
   {
     title: "RSS feed",
-    load: () => import("./demos/feeds").then((m) => m.FeedsDemo),
+    load: after(() => import("./demos/feeds").then((m) => m.FeedsDemo)),
   },
   {
     title: "Todos",
-    load: () => import("./demos/todos").then((m) => m.TodosDemo),
+    load: after(() => import("./demos/todos").then((m) => m.TodosDemo)),
   },
 ];
 
