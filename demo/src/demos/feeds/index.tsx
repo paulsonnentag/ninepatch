@@ -43,31 +43,35 @@ root.serve({
 
 root.mount("feed", "https://www.inkandswitch.com/index.xml"); // a link
 root.mount("likes", seed.likes); // a link, to an automerge document
-const feed = await root.open<FeedDoc>("feed"); // loaded, so mounts can cross the link
-const likes = await root.open<LikesDoc>("likes");
 
 // every item gets a `liked`: a boolean lens into likes, keyed by what the
-// item links to, mounted next to its fields as the feed refreshes
-const mounted = new Set<string>();
-feed.subscribe((f) => {
-  for (const [id, { title, link }] of Object.entries(f.items)) {
-    if (mounted.has(id)) continue;
-    mounted.add(id);
-    root.mount(
-      ["feed", "items", id, "liked"],
-      derive(
-        likes,
-        (d) => link in d.items,
-        (on) =>
-          likes.change((d) => {
-            if (on)
-              d.items[link] = { title, link, feed: f.url, at: Date.now() };
-            else delete d.items[link];
-          })
-      )
-    );
-  }
-});
+// item links to, mounted next to its fields as the feed refreshes; a feed
+// that can't be fetched (no proxy on a static host) fails in its box, not
+// the page
+async function follow() {
+  const feed = await root.open<FeedDoc>("feed"); // loaded, so mounts can cross the link
+  const likes = await root.open<LikesDoc>("likes");
+  const mounted = new Set<string>();
+  feed.subscribe((f) => {
+    for (const [id, { title, link }] of Object.entries(f.items)) {
+      if (mounted.has(id)) continue;
+      mounted.add(id);
+      root.mount(
+        ["feed", "items", id, "liked"],
+        derive(
+          likes,
+          (d) => link in d.items,
+          (on) =>
+            likes.change((d) => {
+              if (on)
+                d.items[link] = { title, link, feed: f.url, at: Date.now() };
+              else delete d.items[link];
+            })
+        )
+      );
+    }
+  });
+}
 
 // what the feed tool gets: the feed as `document`, and no `likes` — the
 // `liked` entries are on the feed, so they come along
@@ -81,3 +85,4 @@ feedDir.unmount("likes");
 feedDir.spawn("Feed", moduleUrl("feeds/feed.tsx")).terminated.catch((e) => {
   if (!feedDir.signal.aborted) box.textContent = String(e);
 });
+follow().catch(() => {}); // the tool's own open reports the failure
