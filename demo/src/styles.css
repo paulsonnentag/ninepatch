@@ -86,6 +86,35 @@ pre {
   position: static;
 }
 
+/* a demo that hasn't loaded, or didn't: its band, with a word in it */
+.panels.placeholder {
+  grid-template-columns: minmax(0, 1fr);
+  resize: none;
+  overflow: visible;
+  background: var(--pane);
+}
+
+.placeholder-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 2rem;
+  font-size: 0.85rem;
+  color: var(--faint);
+}
+
+.placeholder-slow {
+  max-width: 40rem;
+  font-size: 0.8rem;
+}
+
+.panels.placeholder pre {
+  margin: 0;
+  max-width: 60rem;
+  white-space: pre-wrap;
+  color: #c62828;
+}
+
 .panel.example .panel-body {
   position: absolute;
   top: 1.55rem; /* the label row */
