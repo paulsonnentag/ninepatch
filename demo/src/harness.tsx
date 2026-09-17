@@ -78,6 +78,8 @@ export function Section(props: {
   widths?: [number, number];
   /** `false` leaves the inspector out: the preview alone, full width. */
   inspector?: boolean;
+  /** How the directories are laid out, under the title: a line and a tree. */
+  about?: JSX.Element;
   children: JSX.Element;
 }) {
   const [widths, setWidths] = createSignal<number[]>(props.widths ?? [1, 2]);
@@ -122,6 +124,9 @@ export function Section(props: {
           </button>
         </Show>
       </h3>
+      <Show when={props.about}>
+        <div class="about">{props.about}</div>
+      </Show>
       <div
         class="panels"
         classList={{ solo: props.inspector === false }}
@@ -188,7 +193,8 @@ type Selection = {
 
 // a pane across a window: the listing at a path, or the picked leaf's preview
 type Pane =
-  { kind: "listing"; path: string[] } | { kind: "preview"; sel: Selection };
+  | { kind: "listing"; path: string[] }
+  | { kind: "preview"; sel: Selection };
 
 // how long a pane takes to slide in or out — the transition in the css
 const SLIDE_MS = 250;
