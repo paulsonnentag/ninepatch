@@ -62,4 +62,7 @@ pnpm typecheck
 pnpm format
 ```
 
-Pushing to `main` builds the demo and publishes it to GitHub Pages.
+Pushing to `main` builds the demo and publishes it to GitHub Pages. Every
+other branch is published too, as a preview at
+`/ninepatch/preview/<branch>/` with the `/` in the branch name turned into
+`-`.

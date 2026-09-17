@@ -331,23 +331,53 @@ body.dragging {
   font-size: 0.8rem;
 }
 
-/* the window is a fixed height; the list and the preview scroll inside */
+/* the window is a fixed height; inside it a strip of panes — a listing for
+   every step of the way walked, then the picked leaf's preview — of which
+   the last two show. Walking deeper pushes the strip left; each pane
+   scrolls on its own */
 .window-body {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+.strip {
   display: flex;
   align-items: stretch;
+  width: 100%;
+  height: 100%;
+  transform: translateX(calc(var(--behind, 0) * -50%));
+  transition: transform 0.25s ease;
 }
 
-.window-body .entries {
-  flex: 1;
+.strip > * {
+  flex: none;
+  width: 50%;
   min-width: 0;
-  overflow: auto;
+  transition: width 0.25s ease;
 }
 
-.window.open .entries {
-  flex: 0 0 45%;
+.strip.single > * {
+  width: 100%;
+}
+
+.strip > .entries {
+  overflow: auto;
   border-right: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip,
+  .strip > * {
+    transition: none;
+  }
+}
+
+/* the folder open in the pane to the right */
+.tree-item.walked,
+.tree-item.walked:hover,
+.tree-item.inherited.walked {
+  background: #e2e2e5;
 }
 
 /* a name with names below it is walked into: a chevron at the row's end */
@@ -776,8 +806,6 @@ body.resizing {
 }
 
 .preview {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;

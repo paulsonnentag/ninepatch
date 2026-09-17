@@ -2,6 +2,7 @@
 // plus three panels: the live example, the code, and the directories
 
 import {
+  batch,
   createEffect,
   createMemo,
   createResource,
@@ -14,6 +15,7 @@ import {
   onMount,
   Show,
   splitProps,
+  untrack,
   type Accessor,
   type JSX,
 } from "solid-js";
@@ -209,6 +211,13 @@ type Selection = {
   from: Owner | undefined;
 };
 
+// a pane across a window: the listing at a path, or the picked leaf's preview
+type Pane =
+  { kind: "listing"; path: string[] } | { kind: "preview"; sel: Selection };
+
+// how long a pane takes to slide in or out — the transition in the css
+const SLIDE_MS = 250;
+
 // how a window is found from elsewhere — the preview's "from" link
 type Registry = Map<Directory, () => void>;
 
@@ -360,34 +369,87 @@ function Node(props: {
 
   const mine = () => selections().get(self);
   const isFocused = () => focusedWindow() === self;
-  // where the window is looking: the title bar spells it as a breadcrumb
+  // where the window is looking: the folder open in the right-hand pane;
+  // the title bar spells the way there as a breadcrumb
   const [at, setAt] = createSignal<string[]>([]);
   const here = createMemo(() => {
     const path = at();
     return from(self.list(path), self.list(path).value);
   });
-  const go = (path: string[]) => {
-    setAt(path);
-    select(self, undefined);
-  };
-  // the picked name, when it is in the listing shown
-  const selected = () => {
+  const go = (path: string[]) =>
+    batch(() => {
+      setAt(path);
+      select(self, undefined);
+    });
+  // the picked name, when it is in the listing at `path`
+  const selectedIn = (path: string[]) => {
     const sel = mine();
-    if (!sel || sel.path.slice(0, -1).join("/") !== at().join("/")) return;
+    if (!sel || sel.path.slice(0, -1).join("/") !== path.join("/")) return;
     return sel.path[sel.path.length - 1];
   };
-  // a name with names below it is walked into; a leaf is picked, and
-  // picked again is let go
+  // the name walked into from the listing at `path`: the next step of the way
+  const walkedIn = (path: string[]) => {
+    const way = at();
+    if (way.length <= path.length) return;
+    return path.every((n, i) => n === way[i]) ? way[path.length] : undefined;
+  };
+  // a name with names below it opens in the pane to its right; a leaf is
+  // picked and previewed there, and picked again is let go
   const pick = (
     path: string[],
     handle: Handle<unknown> | undefined,
     owner: Owner | undefined,
     folder: boolean
   ) => {
+    const parent = path.slice(0, -1);
     if (folder) return go(path);
-    if (selected() === path[path.length - 1]) return select(self, undefined);
-    select(self, { path, dir: self, probe, handle, from: owner });
+    if (selectedIn(parent) === path[path.length - 1])
+      return select(self, undefined);
+    batch(() => {
+      setAt(parent);
+      select(self, { path, dir: self, probe, handle, from: owner });
+    });
   };
+
+  // the panes across the window: a listing for every step of the way, then
+  // the picked leaf's preview; the last two show, the rest have slid off
+  // to the left. Panes keep their identity so a step back finds them again.
+  const listings = new Map<string, Pane>();
+  let preview: Pane | undefined;
+  const panes = createMemo<Pane[]>(() => {
+    const way = at();
+    const out: Pane[] = [];
+    for (let i = 0; i <= way.length; i++) {
+      const path = way.slice(0, i);
+      const key = path.join("/");
+      let pane = listings.get(key);
+      if (!pane) listings.set(key, (pane = { kind: "listing", path }));
+      out.push(pane);
+    }
+    const sel = mine();
+    if (sel) {
+      if (preview?.kind !== "preview" || preview.sel !== sel)
+        preview = { kind: "preview", sel };
+      out.push(preview);
+    }
+    return out;
+  });
+  // a step back keeps the pane it leaves until it has slid out of view
+  const [shown, setShown] = createSignal(panes());
+  createEffect(() => {
+    const next = panes();
+    const prev = untrack(shown);
+    const back =
+      next.length < prev.length && next.every((p, i) => p === prev[i]);
+    if (!back) return setShown(next);
+    const timer = setTimeout(() => setShown(next), SLIDE_MS);
+    onCleanup(() => clearTimeout(timer));
+  });
+  const behind = () => Math.max(0, panes().length - 2);
+  createEffect(() => {
+    panes();
+    bumpLayout(0); // the rows the process lines end at have moved
+  });
 
   props.registry.set(self, () => {
     setFolded(false);
@@ -428,7 +490,6 @@ function Node(props: {
           <div
             class="window"
             classList={{
-              open: mine() !== undefined,
               focused: isFocused(),
               folded: folded(),
             }}
@@ -474,28 +535,35 @@ function Node(props: {
             </div>
             <Show when={!folded()}>
               <div class="window-body">
-                <Show when={at()} keyed>
-                  {(path) => (
-                    <Listing
-                      self={self}
-                      probe={probe}
-                      path={path}
-                      selected={selected()}
-                      focused={isFocused()}
-                      procs={procs}
-                      pick={pick}
-                    />
-                  )}
-                </Show>
-                <Show when={mine()} keyed>
-                  {(sel) => (
-                    <Preview
-                      selection={sel}
-                      reveal={(dir) => props.registry.get(dir)?.()}
-                      close={() => select(self, undefined)}
-                    />
-                  )}
-                </Show>
+                <div
+                  class="strip"
+                  classList={{ single: panes().length === 1 }}
+                  style={{ "--behind": behind() }}
+                  onTransitionEnd={() => bumpLayout(0)}
+                >
+                  <For each={shown()}>
+                    {(pane) =>
+                      pane.kind === "listing" ? (
+                        <Listing
+                          self={self}
+                          probe={probe}
+                          path={pane.path}
+                          selected={selectedIn(pane.path)}
+                          walked={walkedIn(pane.path)}
+                          focused={isFocused()}
+                          procs={procs}
+                          pick={pick}
+                        />
+                      ) : (
+                        <Preview
+                          selection={pane.sel}
+                          reveal={(dir) => props.registry.get(dir)?.()}
+                          close={() => select(self, undefined)}
+                        />
+                      )
+                    }
+                  </For>
+                </div>
               </div>
               <div class="window-grip" onPointerDown={resize} />
             </Show>
@@ -545,6 +613,8 @@ function Listing(props: {
   probe: Directory | undefined;
   path: string[];
   selected: string | undefined;
+  /** The name whose listing is open in the pane to the right. */
+  walked: string | undefined;
   focused: boolean;
   procs: Accessor<Process[]>;
   pick: (
@@ -627,6 +697,7 @@ function Listing(props: {
               data-path={key}
               classList={{
                 selected: props.selected === name,
+                walked: props.walked === name,
                 origin: isOrigin(key),
                 twin: isTwin(name, value()),
                 lit: isLit(key),
@@ -896,6 +967,7 @@ function linesFor(p: Process, names: string[]): Line[] {
     if (!item) continue;
     const r = item.getBoundingClientRect();
     if (r.bottom < b.top || r.top > b.bottom) continue; // scrolled out of the window
+    if (r.right < b.left || r.left > b.right) continue; // in a pane that slid away
     // from the line of code that opened it, when its source is open
     const line = source?.querySelector(`[data-opens="${CSS.escape(name)}"]`);
     const l = line?.getBoundingClientRect();
