@@ -136,9 +136,6 @@ export type Seed = {
   whiteboard: string;
   notes: string;
   notes2: string;
-  recipe: string;
-  letter: string;
-  layout: string;
   alice: string;
   bob: string;
   likes: string;

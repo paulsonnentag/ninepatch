@@ -23,9 +23,9 @@ export function Page() {
       <ChatDemo />
       <CanvasDemo />
       <FrameDemo />
+      <ViewsDemo />
       <WhiteboardDemo />
       <FeedsDemo />
-      <ViewsDemo />
       <TodosDemo />
     </>
   );

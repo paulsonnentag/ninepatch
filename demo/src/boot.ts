@@ -10,8 +10,6 @@ import type {
   Folder,
   LikesDoc,
   EraserShape,
-  LayoutDoc,
-  LayoutWindow,
   MapDoc,
   MapShape,
   MarkdownDoc,
@@ -179,27 +177,6 @@ async function findOrCreateSeed(): Promise<Seed> {
         );
     });
   }
-  if (!folder.doc().recipe) {
-    // seeded before the views section existed
-    const recipe = repo.create<MarkdownDoc>({
-      type: "markdown",
-      content: seedRecipe(),
-    });
-    const letter = repo.create<MarkdownDoc>({
-      type: "markdown",
-      content: seedLetter(),
-    });
-    folder.change((d) => {
-      d.recipe = recipe.url;
-      d.letter = letter.url;
-    });
-  }
-  if (!folder.doc().layout) {
-    const layout = repo.create<LayoutDoc>({
-      windows: seedLayoutWindows(folder.doc().notes),
-    });
-    folder.change((d) => (d.layout = layout.url));
-  }
   if (items.some((it) => !it.docUrl)) {
     // seeded before the map had a document of its own to be selected by
     canvas.change((d) => {
@@ -226,9 +203,6 @@ async function findOrCreateSeed(): Promise<Seed> {
     whiteboard: docs.whiteboard,
     notes: docs.notes,
     notes2: docs.notes2,
-    recipe: folder.doc().recipe,
-    letter: folder.doc().letter,
-    layout: folder.doc().layout,
     alice: docs.alice,
     bob: docs.bob,
     likes: docs.likes,
@@ -345,71 +319,6 @@ export function seedWhiteboardShapes(): Record<string, Shape> {
     eraser,
     map,
   };
-}
-
-// The layout is an arrangement of windows over one document: the editor
-// and the count take the host's `document`, the preview is pinned to the
-// notes wherever the layout is used.
-export function seedLayoutWindows(
-  docUrl: string
-): Record<string, LayoutWindow> {
-  return {
-    editor: {
-      componentUrl: "./demos/views/editor.tsx",
-      x: 16,
-      y: 16,
-      w: 300,
-      h: 180,
-      docUrl,
-      current: true,
-    },
-    count: {
-      componentUrl: "./demos/views/wordcount.tsx",
-      x: 16,
-      y: 212,
-      w: 130,
-      h: 110,
-      docUrl,
-      current: true,
-    },
-    preview: {
-      componentUrl: "./demos/views/preview.tsx",
-      x: 162,
-      y: 212,
-      w: 220,
-      h: 200,
-      docUrl,
-    },
-  };
-}
-
-export function seedRecipe(): string {
-  return `# Pancakes
-
-Whisk **two eggs** with a cup of milk, then fold in a cup of flour, a
-spoon of sugar and a pinch of salt.
-
-1. Let the batter rest for ten minutes.
-2. Heat a pan and butter it lightly.
-3. Pour a ladle, flip when the edges dry, and stack.
-
-Serve with lemon and sugar, or with jam if the lemons are gone.
-`;
-}
-
-export function seedLetter(): string {
-  return `# Dear reader
-
-This is a letter, so it is longer than the notes and shorter than a book.
-It exists so the word count has something to count and the pages have
-something to turn.
-
-The same document appears in every window that takes the *current*
-document. Pick another one above and watch which windows follow.
-
-Yours,
-the seed
-`;
 }
 
 function rect(w: number, h: number): number[] {
