@@ -17,30 +17,9 @@ mount what the component should see, hide what it shouldn't, hand it over:
 it can't tell whether `document` was mounted just for it or inherited from
 the page, and it can't reach anything you didn't give it.
 
-[**Live demo**](https://paulsonnentag.github.io/ninepatch/) — open it in a
-second tab and everything syncs.
-
-## The demos
-
-Each one is a working page plus the source of every tool it spawns.
-
-- **Todos** — the smallest case: one directory holding one document, a
-  todo tool spawned in it.
-- **The same document, on a terminal** — that todo document opened by a
-  program with no `dom` at all. It reads `keyboard` and writes `screen`,
-  and the host mounts those two where it would otherwise mount an element.
-- **Chat** — one tool mounted twice on the same document with a different
-  `user` entry each time, so who is typing is decided by the host instead
-  of a global.
-- **Canvas and map** — the document stores a `componentUrl`, a `docUrl`
-  and a position per item, so the canvas drags wrappers and spawns
-  whatever the document names.
-- **Whiteboard** — Rio, one level at a time: surfaces are logical, every
-  shape is a component of its own, and the map is a shape that is a
-  surface in turn.
-- **The URL is a text field** — a `Route` process mounts `document` as a
-  two-way lens over the url, so the bar only writes the url and the editor
-  only rebinds the doc.
+[**Live demo**](https://paulsonnentag.github.io/ninepatch/) — a page of
+working examples, each beside an inspector of the directories it runs in.
+Open it in a second tab and everything syncs.
 
 ## Layout
 
