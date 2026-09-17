@@ -37,7 +37,10 @@ export function Placeholder(props: { title: string; error?: unknown }) {
   );
 }
 
+// the message, then the stack — Safari's stack doesn't carry the message
 function describe(e: unknown): string {
-  if (e instanceof Error) return e.stack ?? e.message;
-  return String(e);
+  if (!(e instanceof Error)) return String(e);
+  const head = `${e.name}: ${e.message}`;
+  if (!e.stack) return head;
+  return e.stack.includes(e.message) ? e.stack : `${head}\n${e.stack}`;
 }
