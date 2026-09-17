@@ -2,24 +2,10 @@ import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed, seedCanvasItems } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { CanvasDoc } from "../../types";
-import canvasSource from "./canvas.tsx?raw";
-import placeSource from "./place.tsx?raw";
-import mapSource from "./map.tsx?raw";
-import schemasSource from "./schemas.ts?raw";
 
 export function CanvasDemo() {
   return (
-    <Section
-      title="Canvas"
-      chain={[frame, root]}
-      reset={reset}
-      sources={[
-        { name: "canvas.tsx", code: canvasSource },
-        { name: "place.tsx", code: placeSource },
-        { name: "map.tsx", code: mapSource },
-        { name: "schemas.ts", code: schemasSource },
-      ]}
-    >
+    <Section title="Canvas" chain={[frame, root]} reset={reset}>
       <Canvas dir={root} document={seed.canvas} />
     </Section>
   );

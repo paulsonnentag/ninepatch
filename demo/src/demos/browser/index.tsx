@@ -2,9 +2,6 @@ import type { AnyDocumentId } from "@automerge/automerge-repo";
 import { frame, moduleUrl, repo, seed } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { MarkdownDoc } from "../../types";
-import routeSource from "./route.ts?raw";
-import urlbarSource from "./urlbar.tsx?raw";
-import markdownSource from "./markdown.tsx?raw";
 
 export function BrowserDemo() {
   return (
@@ -12,11 +9,6 @@ export function BrowserDemo() {
       title="The URL is a text field"
       chain={[frame, browser]}
       reset={reset}
-      sources={[
-        { name: "route.ts", code: routeSource },
-        { name: "urlbar.tsx", code: urlbarSource },
-        { name: "markdown.tsx", code: markdownSource },
-      ]}
     >
       <div class="browser">
         <div class="browser-chrome">

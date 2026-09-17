@@ -14,10 +14,9 @@ export function RawEditor(props: { handle: Handle<unknown> }) {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   // writes go through `change`; a read-only handle's throw shows briefly
-  const write = (fn: (draft: unknown) => void, root?: unknown) => {
+  const write = (fn: (draft: unknown) => void) => {
     try {
-      if (root !== undefined) props.handle.set(root);
-      else props.handle.change(fn);
+      props.handle.change(fn);
     } catch (e) {
       setError((e as Error).message);
       clearTimeout(timer);
@@ -33,7 +32,17 @@ export function RawEditor(props: { handle: Handle<unknown> }) {
       <Show
         when={isCollection(value())}
         fallback={
-          <PrimitiveRoot value={value()} set={(v) => write(() => {}, v)} />
+          <Show
+            when={isPrimitive(value())}
+            fallback={
+              <div class="raw-row">
+                <span class="raw-toggle raw-toggle-spacer" />
+                <ValueText value={value()} expanded={false} onEdit={() => {}} />
+              </div>
+            }
+          >
+            <PrimitiveField value={value()} set={(v) => props.handle.set(v)} />
+          </Show>
         }
       >
         <Node
@@ -252,38 +261,101 @@ function ValueText(props: {
   );
 }
 
-function PrimitiveRoot(props: { value: unknown; set: (v: unknown) => void }) {
-  const [editing, setEditing] = createSignal(false);
+export function isPrimitive(v: unknown): boolean {
+  const t = typeof v;
+  return v === null || t === "string" || t === "number" || t === "boolean";
+}
+
+const KINDS: [Kind, string][] = [
+  ["string", "str"],
+  ["number", "num"],
+  ["boolean", "bool"],
+  ["null", "null"],
+];
+
+// a primitive edited in place: the field writes as you type, the picker
+// beside it changes the type and converts what is there; `compact` is for
+// a listing row, where the picker spells its types short
+export function PrimitiveField(props: {
+  value: unknown;
+  set: (v: unknown) => void;
+  compact?: boolean;
+}) {
+  const kind = () => typeOf(props.value);
+  // what is typed, while the field has focus; a number that doesn't parse
+  // yet stays here and is not written
+  const [draft, setDraft] = createSignal<string>();
+  const [error, setError] = createSignal<string>();
+  const text = () =>
+    draft() ?? (props.value === null ? "" : String(props.value));
+  const invalid = () =>
+    kind() === "number" && draft() !== undefined && !isNumber(draft()!);
+  const set = (v: unknown) => {
+    try {
+      props.set(v);
+      setError(undefined);
+    } catch (e) {
+      setError((e as Error).message); // a read-only handle
+    }
+  };
+  const input = (t: string) => {
+    setDraft(t);
+    if (kind() === "number") {
+      if (isNumber(t)) set(Number(t));
+    } else set(t);
+  };
   return (
-    <div class="raw-row">
-      <span class="raw-toggle raw-toggle-spacer" />
-      <Show
-        when={editing()}
-        fallback={
-          <>
-            <ValueText
-              value={props.value}
-              expanded={false}
-              onEdit={() => setEditing(true)}
-            />
-            <span class="raw-actions">
-              <button title="Edit" onClick={() => setEditing(true)}>
-                ✎
-              </button>
-            </span>
-          </>
-        }
-      >
-        <InlineEditor
-          value={props.value}
-          confirm={(v) => {
-            props.set(v);
-            setEditing(false);
-          }}
-          cancel={() => setEditing(false)}
+    <span
+      class="raw-live"
+      classList={{ compact: props.compact }}
+      title={error()}
+      onClick={(e) => e.stopPropagation()} // the row around it stays as it is
+    >
+      <Show when={kind() === "string" || kind() === "number"}>
+        <input
+          class="raw-input raw-field"
+          classList={{ invalid: invalid() || error() !== undefined }}
+          inputmode={kind() === "number" ? "decimal" : "text"}
+          placeholder={kind()}
+          value={text()}
+          onInput={(e) => input(e.currentTarget.value)}
+          onBlur={() => setDraft(undefined)}
         />
       </Show>
-    </div>
+      <Show when={kind() === "boolean"}>
+        <select
+          class="raw-input raw-field"
+          classList={{ invalid: error() !== undefined }}
+          onChange={(e) => set(e.currentTarget.value === "true")}
+        >
+          <option value="true" selected={props.value === true}>
+            true
+          </option>
+          <option value="false" selected={props.value === false}>
+            false
+          </option>
+        </select>
+      </Show>
+      <Show when={kind() === "null"}>
+        <span class="raw-value null raw-field">null</span>
+      </Show>
+      <select
+        class="raw-input raw-kind"
+        title="type"
+        onChange={(e) => {
+          setDraft(undefined);
+          set(convert(props.value, e.currentTarget.value as Kind));
+        }}
+      >
+        <For each={KINDS}>
+          {([k, short]) => (
+            <option value={k} selected={kind() === k}>
+              {props.compact ? short : k}
+            </option>
+          )}
+        </For>
+      </select>
+    </span>
   );
 }
 
@@ -498,6 +570,29 @@ function parse(text: string, kind: Kind): unknown {
       return [];
     default:
       return text;
+  }
+}
+
+function isNumber(text: string): boolean {
+  return text.trim() !== "" && !Number.isNaN(Number(text));
+}
+
+// the same value as another type, as far as it goes: "12" to 12, 1 to true,
+// anything to its text
+function convert(v: unknown, kind: Kind): unknown {
+  switch (kind) {
+    case "string":
+      return v === null ? "" : String(v);
+    case "number": {
+      const n = Number(v);
+      return Number.isNaN(n) ? 0 : n;
+    }
+    case "boolean":
+      return v === "false" ? false : Boolean(v);
+    case "null":
+      return null;
+    default:
+      return parse("", kind);
   }
 }
 

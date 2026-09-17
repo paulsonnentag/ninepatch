@@ -3,24 +3,10 @@ import { frame, moduleUrl, repo, seed, seedTodoItems } from "../../boot";
 import { createComponent, Section } from "../../harness";
 import type { TodoDoc } from "../../types";
 import { createTerminalComponent } from "../terminal/terminal";
-import todosSource from "./todos.tsx?raw";
-import todosTuiSource from "../terminal/todos-tui.ts?raw";
-import tuiSource from "../terminal/tui.ts?raw";
-import terminalSource from "../terminal/terminal.tsx?raw";
 
 export function TodosDemo() {
   return (
-    <Section
-      title="Todos"
-      chain={[frame, todos]}
-      reset={reset}
-      sources={[
-        { name: "todos.tsx", code: todosSource },
-        { name: "todos-tui.ts", code: todosTuiSource },
-        { name: "tui.ts", code: tuiSource },
-        { name: "terminal.tsx", code: terminalSource },
-      ]}
-    >
+    <Section title="Todos" chain={[frame, todos]} reset={reset}>
       <div class="stack">
         <Todos dir={todos} document={seed.todos} />
         <TodosTui dir={todos} name="tui" document={seed.todos} />

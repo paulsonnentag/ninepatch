@@ -4,20 +4,10 @@ import { frame, moduleUrl, repo, seed } from "../../boot";
 import { Section } from "../../harness";
 import type { FeedDoc, LikesDoc } from "../../types";
 import { fromRss, toUrl } from "./rss";
-import rssSource from "./rss.ts?raw";
-import feedSource from "./feed.tsx?raw";
 
 export function FeedsDemo() {
   return (
-    <Section
-      title="RSS feed"
-      chain={[frame, root]}
-      reset={reset}
-      sources={[
-        { name: "rss.ts", code: rssSource },
-        { name: "feed.tsx", code: feedSource },
-      ]}
-    >
+    <Section title="RSS feed" chain={[frame, root]} reset={reset}>
       {box}
     </Section>
   );

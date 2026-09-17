@@ -4,34 +4,10 @@ import { Section } from "../../harness";
 import type { Workspace } from "../../types";
 import { findOrCreateDocuments, resetDocuments } from "./documents";
 import { NOTHING } from "./windows";
-import frameSource from "./frame.tsx?raw";
-import sidebarSource from "./sidebar.tsx?raw";
-import tabsSource from "./tabs.tsx?raw";
-import spatialSource from "./spatial.tsx?raw";
-import tiledSource from "./tiled.tsx?raw";
-import windowsSource from "./windows.ts?raw";
-import markdownSource from "./markdown.tsx?raw";
-import describeSource from "./describe.ts?raw";
-import documentsSource from "./documents.ts?raw";
 
 export function FrameDemo() {
   return (
-    <Section
-      title="Window management"
-      chain={[page, frame]}
-      reset={reset}
-      sources={[
-        { name: "frame.tsx", code: frameSource },
-        { name: "sidebar.tsx", code: sidebarSource },
-        { name: "tabs.tsx", code: tabsSource },
-        { name: "spatial.tsx", code: spatialSource },
-        { name: "tiled.tsx", code: tiledSource },
-        { name: "windows.ts", code: windowsSource },
-        { name: "markdown.tsx", code: markdownSource },
-        { name: "describe.ts", code: describeSource },
-        { name: "documents.ts", code: documentsSource },
-      ]}
-    >
+    <Section title="Window management" chain={[page, frame]} reset={reset}>
       {box}
     </Section>
   );
