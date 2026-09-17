@@ -937,6 +937,34 @@ body.resizing {
   color: var(--faint);
 }
 
+/* a primitive on its own: the field takes the width, the type picker sits
+   at its end */
+.raw-live {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.raw-live .raw-field {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  padding: 0.25rem 0.45rem;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.raw-live .raw-field.invalid {
+  border-color: #c62828;
+}
+
+.raw-live .raw-kind {
+  flex: none;
+  padding: 0.25rem 0.3rem;
+  font: inherit;
+  line-height: 1.4;
+}
+
 .raw-ok {
   color: #2e7d32 !important;
 }

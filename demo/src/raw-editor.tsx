@@ -252,38 +252,79 @@ function ValueText(props: {
   );
 }
 
+// a primitive on its own is edited in place: the field writes as you type,
+// the picker beside it changes the type and converts what is there
 function PrimitiveRoot(props: { value: unknown; set: (v: unknown) => void }) {
-  const [editing, setEditing] = createSignal(false);
+  const kind = () => typeOf(props.value);
+  const editable = () =>
+    props.value === null ||
+    kind() === "string" ||
+    kind() === "number" ||
+    kind() === "boolean";
+  // what is typed, while the field has focus; a number that doesn't parse
+  // yet stays here and is not written
+  const [draft, setDraft] = createSignal<string>();
+  const text = () =>
+    draft() ?? (props.value === null ? "" : String(props.value));
+  const invalid = () =>
+    kind() === "number" && draft() !== undefined && !isNumber(draft()!);
+  const input = (t: string) => {
+    setDraft(t);
+    if (kind() === "number") {
+      if (isNumber(t)) props.set(Number(t));
+    } else props.set(t);
+  };
   return (
-    <div class="raw-row">
-      <span class="raw-toggle raw-toggle-spacer" />
-      <Show
-        when={editing()}
-        fallback={
-          <>
-            <ValueText
-              value={props.value}
-              expanded={false}
-              onEdit={() => setEditing(true)}
-            />
-            <span class="raw-actions">
-              <button title="Edit" onClick={() => setEditing(true)}>
-                ✎
-              </button>
-            </span>
-          </>
-        }
-      >
-        <InlineEditor
-          value={props.value}
-          confirm={(v) => {
-            props.set(v);
-            setEditing(false);
+    <Show
+      when={editable()}
+      fallback={
+        <div class="raw-row">
+          <span class="raw-toggle raw-toggle-spacer" />
+          <ValueText value={props.value} expanded={false} onEdit={() => {}} />
+        </div>
+      }
+    >
+      <div class="raw-live">
+        <Show when={kind() === "string" || kind() === "number"}>
+          <input
+            class="raw-input raw-field"
+            classList={{ invalid: invalid() }}
+            inputmode={kind() === "number" ? "decimal" : "text"}
+            placeholder={kind()}
+            value={text()}
+            onInput={(e) => input(e.currentTarget.value)}
+            onBlur={() => setDraft(undefined)}
+          />
+        </Show>
+        <Show when={kind() === "boolean"}>
+          <select
+            class="raw-input raw-field"
+            value={String(props.value)}
+            onChange={(e) => props.set(e.currentTarget.value === "true")}
+          >
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </Show>
+        <Show when={kind() === "null"}>
+          <span class="raw-value null raw-field">null</span>
+        </Show>
+        <select
+          class="raw-input raw-kind"
+          title="type"
+          value={kind()}
+          onChange={(e) => {
+            setDraft(undefined);
+            props.set(convert(props.value, e.currentTarget.value as Kind));
           }}
-          cancel={() => setEditing(false)}
-        />
-      </Show>
-    </div>
+        >
+          <option value="string">string</option>
+          <option value="number">number</option>
+          <option value="boolean">boolean</option>
+          <option value="null">null</option>
+        </select>
+      </div>
+    </Show>
   );
 }
 
@@ -498,6 +539,29 @@ function parse(text: string, kind: Kind): unknown {
       return [];
     default:
       return text;
+  }
+}
+
+function isNumber(text: string): boolean {
+  return text.trim() !== "" && !Number.isNaN(Number(text));
+}
+
+// the same value as another type, as far as it goes: "12" to 12, 1 to true,
+// anything to its text
+function convert(v: unknown, kind: Kind): unknown {
+  switch (kind) {
+    case "string":
+      return v === null ? "" : String(v);
+    case "number": {
+      const n = Number(v);
+      return Number.isNaN(n) ? 0 : n;
+    }
+    case "boolean":
+      return v === "false" ? false : Boolean(v);
+    case "null":
+      return null;
+    default:
+      return parse("", kind);
   }
 }
 
