@@ -1,5 +1,5 @@
 import type { AnyDocumentId } from "@automerge/automerge-repo";
-import { derive } from "@ninepatch/core";
+import { derive, type Directory } from "@ninepatch/core";
 import {
   frame,
   moduleUrl,
@@ -23,16 +23,16 @@ export function ViewsDemo() {
       <div class="views">
         <div class="views-pane">
           <h4>the layout, on the notes</h4>
-          <Wm dir={editing} />
+          {editingBox}
         </div>
         <div class="views-pane">
-          <h4>its folder</h4>
-          <FolderView dir={editing} />
+          <h4>the workspace, as a folder</h4>
+          <FolderView dir={editing} workspace={editing} />
         </div>
         <div class="views-pane">
           <h4>the same layout, on a pick</h4>
           <Picker dir={reader} />
-          <Wm dir={reader} />
+          {readerBox}
         </div>
       </div>
     </Section>
@@ -64,10 +64,23 @@ const root = frame.fork("views");
 root.mount("layout", seed.layout); // a link: the arrangement, for both sides
 root.mount("examples", examples); // the documents the picker knows, by name
 
-const editing = root.fork("editing");
+// a workspace: a directory the manager runs at, so what it mounts —
+// `surfaces/<id>`, one bind per window — is the workspace's to list
+function workspace(name: string): [Directory, HTMLDivElement] {
+  const dir = root.fork(name);
+  const box = document.createElement("div");
+  box.className = "tool";
+  dir.mount("dom", box);
+  dir.spawn("Wm", moduleUrl("views/wm.tsx")).terminated.catch((e: unknown) => {
+    if (!dir.signal.aborted) box.textContent = String(e);
+  });
+  return [dir, box];
+}
+
+const [editing, editingBox] = workspace("editing");
 editing.mount("document", seed.notes); // the layout is built on the notes
 
-const reader = root.fork("reader");
+const [reader, readerBox] = workspace("reader");
 reader.mount("picked", "recipe"); // a name, not a url: readable as itself
 const picked = await reader.open<string>("picked");
 reader.mount(
@@ -75,6 +88,7 @@ reader.mount(
   derive(picked, (name) => examples[name]) // a link that follows the pick
 );
 
-const Wm = createComponent(moduleUrl("views/wm.tsx"));
-const FolderView = createComponent(moduleUrl("views/folder.tsx"));
+const FolderView = createComponent<{ workspace: Directory }>(
+  moduleUrl("views/folder.tsx")
+);
 const Picker = createComponent(moduleUrl("views/picker.tsx"));

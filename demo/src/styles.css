@@ -2043,7 +2043,7 @@ button:hover {
 .views {
   display: grid;
   grid-template-columns:
-    minmax(340px, 3fr) minmax(220px, 2fr)
+    minmax(340px, 3fr) minmax(280px, 2fr)
     minmax(340px, 3fr);
   gap: 1rem;
   align-items: start;
@@ -2294,52 +2294,36 @@ button:hover {
   border-top: 1px solid #f0f0f0;
 }
 
-/* the folder view: one entry per window, its `document` below, and the
-   sticker for the current document */
-.folder {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 0.78rem;
-  overflow: hidden;
+/* the workspace as a folder: the inspector's window, drawn by the demo's
+   own viewer, with a shelf above it holding the sticker */
+.workspace-folder {
+  font-size: 0.8rem;
 }
 
-.folder-head {
+.sticker-shelf {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  background: #fafafa;
+  gap: 0.6rem;
+  min-height: 2rem;
+  margin-bottom: 0.6rem;
 }
 
-.folder-hint {
+.shelf-hint {
   font-size: 0.7rem;
   color: var(--faint);
 }
 
-.folder-window {
-  padding: 0.25rem 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.folder-window:last-child {
-  border-bottom: none;
-}
-
-.folder-doc {
-  padding-left: 1.9rem;
-}
-
-.folder-doc.over {
+.tree-item.over,
+.tree-item.inherited.over {
   background: #dbe7fd;
   outline: 1px dashed var(--accent);
   outline-offset: -1px;
 }
 
-.folder-doc.stuck .tree-name {
-  color: var(--faint);
+.tree-item.stuck .tree-value {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .sticker {
@@ -2366,9 +2350,15 @@ button:hover {
 }
 
 .sticker.stuck {
-  margin-left: auto;
+  max-width: 100%;
   cursor: default;
   transform: rotate(-1.5deg);
+}
+
+.sticker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sticker-peel {

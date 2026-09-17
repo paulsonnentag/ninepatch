@@ -11,11 +11,12 @@ import { field, type Directory } from "@ninepatch/core";
 import type { LayoutDoc, LayoutWindow } from "../../types";
 import { componentName, tools } from "./tools";
 
-// The window manager. Its document is the arrangement: for every window
-// it forks a slot, mounts the frame as `dom` and runs the window's tool
-// there. A window that has a document of its own pins it into the slot;
-// one marked `current` mounts nothing, so its `document` is whatever the
-// directory the layout was placed in has there.
+// The window manager runs at the workspace. Its `layout` is the
+// arrangement: for every window it forks a slot, mounts the frame as
+// `dom` and the tool's name as `tool`, runs the tool there, and binds the
+// slot at `surfaces/<id>` so the workspace lists it. A window with a
+// document of its own has it pinned into the slot; one marked `current`
+// mounts nothing, so its `document` is the workspace's.
 export default async function Wm(dir: Directory) {
   const dom = await dir.open<Element>("dom");
   const layout = await dir.open<LayoutDoc>("layout");
@@ -54,17 +55,18 @@ export default async function Wm(dir: Directory) {
             const body = (<div class="win-body" />) as HTMLDivElement;
             const slot = dir.fork(id);
             slot.mount("dom", body);
+            slot.mount("tool", field(layout, ["windows", id, "componentUrl"]));
+            dir.mount(["surfaces", id], slot); // a bind: the surface, for anyone at the workspace
 
             // pinned: the record's own document, held in the slot by a
             // pin — closed when the sticker goes on, and the slot reads
-            // `document` from above again
+            // `document` from the workspace again
             const pinned = createMemo(() => !win()?.current);
             createEffect(() => {
               if (!pinned()) return;
               const pin = slot.fork("pin");
-              pin.mount("slot", slot);
               pin.mount(
-                "slot/document",
+                ["surfaces", id, "document"],
                 field(layout, ["windows", id, "docUrl"])
               );
               onCleanup(() => pin.close());
